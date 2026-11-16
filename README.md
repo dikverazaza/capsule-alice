@@ -73,29 +73,85 @@ zig c++ -target aarch64-linux-musl -O2 services/wakeword/wakewordd.cc -o wakewor
 
 ---
 
-## 🚀 Установка на колонку
+## 🚀 Установка на чистую колонку
 
-1. Скопируйте исполняемые файлы в `/usr/bin/`:
-   ```bash
-   cp capsula-alice capsula-yandex capsula-audio wakewordd ring_daemon capsule_onboarding /usr/bin/
-   chmod +x /usr/bin/capsula-* /usr/bin/wakewordd /usr/bin/ring_daemon /usr/bin/capsule_onboarding
-   ```
-2. Разместите модель нейросети:
-   ```bash
-   mkdir -p /data
-   cp models/model.tflite /data/model.tflite
-   ```
-3. Скопируйте скрипты управления:
-   ```bash
-   cp scripts/capsula-alice-launcher.sh scripts/wifi_setup_helper.sh scripts/capsule-yandex-account scripts/capsule-mic /usr/bin/
-   chmod +x /usr/bin/capsula-alice-launcher.sh /usr/bin/wifi_setup_helper.sh /usr/bin/capsule-yandex-account /usr/bin/capsule-mic
-   cp scripts/S99capsula-alice /etc/init.d/S99capsula-alice
-   chmod +x /etc/init.d/S99capsula-alice
-   ```
-4. Запустите супервизор:
-   ```bash
-   /etc/init.d/S99capsula-alice start
-   ```
+Перед началом убедитесь, что колонка имеет root-доступ по SSH.
+
+### 1. Отключение встроенного ассистента Маруся
+На оригинальной прошивке демоны Маруси (`voice-agent` и `okcall`) запускаются через init-скрипты и блокируют доступ к аудио-захвату. В Buildroot init-скрипты подключаются через `source` (`. $i`), а файловая система корня работает через OverlayFS.
+
+> [!IMPORTANT]
+> **Не переименовывайте** скрипты через `mv`: на UBIFS в OverlayFS это создаёт белые метки (whiteouts), что может повредить индекс файловой системы. Правильный способ — перетереть скрипты безопасными заглушками:
+
+```bash
+# Создание безопасных заглушек для Маруси
+cat << 'EOF' > /etc/init.d/S97voice-agent.sh
+#!/bin/sh
+exit 0
+EOF
+chmod 755 /etc/init.d/S97voice-agent.sh
+
+cat << 'EOF' > /etc/init.d/S97okcall.sh
+#!/bin/sh
+exit 0
+EOF
+chmod 755 /etc/init.d/S97okcall.sh
+
+# Остановка текущих процессов Маруси
+killall -9 voice-agent okcall 2>/dev/null
+```
+
+### 2. Настройка имени хоста и mDNS (`alice.local`)
+Чтобы колонка сразу отзывалась по удобному адресу `http://alice.local`:
+```bash
+echo "alice" > /etc/hostname
+hostname alice 2>/dev/null
+mkdir -p /etc/avahi/services
+cat << 'EOF' > /etc/avahi/services/http.service
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<service-group>
+  <name replace-wildcards="yes">%h</name>
+  <service>
+    <type>_http._tcp</type>
+    <port>80</port>
+  </service>
+</service-group>
+EOF
+```
+
+### 3. Размещение исполняемых файлов
+Скопируйте бинарники прошивки в `/usr/bin/`:
+```bash
+cp capsula-alice capsula-yandex capsula-audio wakewordd ring_daemon capsule_onboarding /usr/bin/
+chmod +x /usr/bin/capsula-* /usr/bin/wakewordd /usr/bin/ring_daemon /usr/bin/capsule_onboarding
+```
+
+### 4. Размещение модели нейросети
+```bash
+mkdir -p /data
+cp models/model.tflite /data/model.tflite
+chmod 644 /data/model.tflite
+```
+
+### 5. Установка вспомогательных скриптов и автозапуска
+Скопируйте скрипты управления в `/usr/bin/` и init-сервисы в `/etc/init.d/`:
+```bash
+cp scripts/capsula-alice-launcher.sh scripts/wifi_setup_helper.sh scripts/capsule-yandex-account scripts/capsule-mic /usr/bin/
+chmod +x /usr/bin/capsula-alice-launcher.sh /usr/bin/wifi_setup_helper.sh /usr/bin/capsule-yandex-account /usr/bin/capsule-mic
+
+cp scripts/S99capsula-alice scripts/S50avahi-daemon /etc/init.d/
+chmod +x /etc/init.d/S99capsula-alice /etc/init.d/S50avahi-daemon
+
+# Если файлы передавались из Windows-среды, нормализуйте окончания строк Unix (LF):
+sed -i 's/\r$//' /usr/bin/capsula-* /usr/bin/wifi_setup_helper.sh /usr/bin/capsule-* /etc/init.d/S* 2>/dev/null
+```
+
+### 6. Запуск супервизора Алисы
+```bash
+/etc/init.d/S99capsula-alice start
+```
+Все службы (распознавание речи, светодиодное кольцо, Яндекс Музыка и веб-портал) запустятся автоматически. При последующих перезагрузках колонка будет стартовать сразу в режиме Алисы.
 
 ---
 

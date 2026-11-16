@@ -1,0 +1,12 @@
+# Enforce Unix LF line endings for all scripts and source files
+* text=auto eol=lf
+*.sh text eol=lf
+S* text eol=lf
+capsule-* text eol=lf
+*.c text eol=lf
+*.cc text eol=lf
+*.h text eol=lf
+*.rs text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.tflite binary
