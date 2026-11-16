@@ -1,0 +1,21 @@
+#!/bin/sh
+# /etc/init.d/S50avahi-daemon
+DAEMON=/usr/sbin/avahi-daemon
+case "$1" in
+    start)
+        killall -9 avahi-daemon 2>/dev/null
+        $DAEMON --no-drop-root -D
+        ;;
+    stop)
+        killall -9 avahi-daemon 2>/dev/null
+        ;;
+    restart)
+        $0 stop
+        sleep 1
+        $0 start
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}" >&2
+        exit 1
+        ;;
+esac

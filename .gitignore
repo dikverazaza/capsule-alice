@@ -1,0 +1,47 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.bak*
+Cargo.lock
+
+# C / C++ build artifacts
+*.o
+*.a
+*.so
+build/
+*.arm64
+/services/ring_daemon/ring_daemon
+/services/onboarding/capsule_onboarding
+/services/wakeword/wakewordd
+
+# Firmware images, dumps, archives
+*.ext4
+*.img
+*.bin
+*.tar.gz
+*.zip
+
+# Secrets, credentials and tokens
+*credentials*.json
+*.token
+*.state
+/data/
+
+# Audio recordings & temporary dumps
+*.wav
+*.pcm
+*.raw
+*.opus
+*.mp3
+
+# Logs & temp files
+*.log
+/tmp/
+.playwright-cli/
+.workbuddy-ai/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
