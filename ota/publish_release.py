@@ -82,7 +82,10 @@ def sha256_file(path: Path) -> str:
 def build_manifest(cfg: dict):
     tag = cfg["tag"]
     version = cfg["version"]
-    base = f"https://github.com/{REPO}/releases/download/{tag}"
+    base = cfg.get(
+        "asset_url_base",
+        f"https://raw.githubusercontent.com/{REPO}/ota-latest/ota/assets",
+    ).rstrip("/")
 
     lines = ["V|1", f"VERSION|{version}"]
     json_files = []
