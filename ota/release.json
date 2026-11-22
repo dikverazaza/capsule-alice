@@ -1,9 +1,9 @@
 {
-  "tag": "v20261123.07",
-  "version": "20261123.07",
-  "name": "Capsule Alice OTA 2026-11-23.07",
+  "tag": "v20261123.08",
+  "version": "20261123.08",
+  "name": "Capsule Alice OTA 2026-11-23.08",
   "asset_url_base": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets",
-  "body": "Lower wake word sensitivity threshold.\n\n- activation threshold 0.40 -> 0.34\n- sustained threshold 0.35 -> 0.30\n- printed threshold updated accordingly\n- includes all periodic OTA and ring/barge-in fixes",
+  "body": "Fix named radio playback and improve command capture.\n\n- radio uses raw s16le paplay instead of WAV-mode input\n- Radio Vanya resolves to a verified MP3 mirror\n- station search scores names instead of taking first popular hit\n- wake word threshold 0.34 -> 0.30, sustained 0.30 -> 0.27\n- lower VAD/speech/continuation thresholds with crest noise rejection\n- includes periodic OTA, ring and barge-in fixes",
   "files": [
     {
       "dest": "/usr/bin/capsula-ota",
