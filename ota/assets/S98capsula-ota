@@ -1,27 +1,41 @@
 #!/bin/sh
 # /etc/init.d/S98capsula-ota
-# Boot-time OTA check. Runs in the background after the network is expected
-# to be up and never plays audio or changes mute state by itself.
+# Boot-independent OTA daemon. Uses start-stop-daemon so it survives rcS/ADB
+# session exit and never depends on the Alice launcher or other services.
 
 OTA_BIN=/usr/bin/capsula-ota
+OTA_PID=/var/run/capsula-ota.pid
 OTA_HOME=/data/ota
 
-case "${1:-}" in
-  start)
-    [ -x "$OTA_BIN" ] || exit 0
+start_ota() {
+    [ -x "$OTA_BIN" ] || return 0
     mkdir -p "$OTA_HOME"
-    nohup sh -c 'sleep 25; /usr/bin/capsula-ota check' \
-      >/tmp/capsula-ota-boot.log 2>&1 &
-    ;;
-  stop)
-    if [ -f "$OTA_HOME/.lock/pid" ]; then
-      pid=$(cat "$OTA_HOME/.lock/pid" 2>/dev/null || printf '')
-      [ -n "$pid" ] && kill "$pid" 2>/dev/null
+    if command -v start-stop-daemon >/dev/null 2>&1; then
+        start-stop-daemon -S -b -m -p "$OTA_PID" -x "$OTA_BIN" \
+            -- daemon >>/tmp/capsula-ota-boot.log 2>&1
+    else
+        nohup "$OTA_BIN" daemon >>/tmp/capsula-ota-boot.log 2>&1 &
     fi
-    ;;
+}
+
+stop_ota() {
+    [ -f "$OTA_PID" ] || return 0
+    if command -v start-stop-daemon >/dev/null 2>&1; then
+        start-stop-daemon -K -p "$OTA_PID" -x "$OTA_BIN" >/dev/null 2>&1
+    else
+        pid=$(cat "$OTA_PID" 2>/dev/null || printf '')
+        [ -n "$pid" ] && kill "$pid" 2>/dev/null
+    fi
+    rm -f "$OTA_PID" 2>/dev/null
+}
+
+case "${1:-}" in
+  start)  start_ota ;;
+  stop)   stop_ota ;;
   restart)
-    "$0" stop
-    "$0" start
+    stop_ota
+    sleep 1
+    start_ota
     ;;
   status)
     [ -x "$OTA_BIN" ] && "$OTA_BIN" status
