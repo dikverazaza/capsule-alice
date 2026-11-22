@@ -53,12 +53,13 @@ DEFER_RESTART_AT_NIGHT=1
 QUIET_START=23
 QUIET_END=7
 OTA_INTERVAL=600
+OTA_RETRY_INTERVAL=60
 # CAPSULA_OTA_BASE_URL=https://example.com/ota
 # CAPSULA_OTA_MANIFEST_URL=https://example.com/custom/manifest.txt
 # CAPSULA_OTA_ASSET_PREFIX=https://example.com/ota/assets/
 ```
 
-`/etc/init.d/S98capsula-ota start` launches the standalone daemon with `start-stop-daemon`. It is also started from `S50avahi-daemon`, which is definitely executed by `rcS` on this firmware; the shared PID file `/var/run/capsula-ota.pid` prevents duplicates. The daemon does not use the Alice launcher, PulseAudio, or any other service, so updates still arrive after a reboot or if Alice is dead.
+`/etc/init.d/S98capsula-ota start` launches the standalone daemon with `start-stop-daemon`. It is also started from `S50avahi-daemon`, which is definitely executed by `rcS` on this firmware. A daemon-owned lock directory `/data/ota/.daemon.lock` prevents duplicates even if both init scripts race at boot. The daemon waits 20 s for Wi-Fi/DNS, retries a failed check after 60 s instead of 10 minutes, then returns to the 600 s interval. It does not use the Alice launcher, PulseAudio, or any other service, so updates still arrive after a reboot or if Alice is dead.
 
 ## First-time bootstrap
 
