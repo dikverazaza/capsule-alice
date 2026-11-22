@@ -1,13 +1,13 @@
 {
-  "version": "20261123.03",
-  "tag": "v20261123.03",
+  "version": "20261123.04",
+  "tag": "v20261123.04",
   "files": [
     {
       "dest": "/usr/bin/capsula-ota",
       "asset": "capsula-ota.sh",
       "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/capsula-ota.sh",
-      "sha256": "bd76c420840f7b1231ce4f00b168b83b3d941b09d074b4b46d75a22ee464da6d",
-      "size": 12911,
+      "sha256": "c5c35703fb72b03cb9bdaa9d50117fea8ac25d8f6f547b12e562d8bdadd61a90",
+      "size": 14242,
       "mode": "755"
     },
     {
