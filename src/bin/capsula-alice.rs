@@ -37,9 +37,9 @@ use tokio_tungstenite::{
 const UNIPROXY_URL: &str = "wss://uniproxy.alice.ya.ru/uni.ws";
 const FIFO_RING: &str = "/tmp/ring.fifo";
 /// Сколько Алиса ждёт НАЧАЛА фразы пользователя после wake-слова.
-const COMMAND_LISTEN_WINDOW: Duration = Duration::from_secs(6);
+const COMMAND_LISTEN_WINDOW: Duration = Duration::from_secs(10);
 /// Сколько Алиса ждёт продолжения диалога после окончания своей реплики.
-const FOLLOWUP_WINDOW: Duration = Duration::from_secs(4);
+const FOLLOWUP_WINDOW: Duration = Duration::from_secs(10);
 /// Дополнительное окно, если ASR вернул пустоту (одна повторная попытка).
 const COMMAND_RETRY_WINDOW: Duration = Duration::from_secs(3);
 /// Файл-триггер локального wake word (в него пишет wakewordd).
@@ -54,6 +54,7 @@ struct ActiveTimer {
     label: String,
     total_secs: u64,
     deadline: Instant,
+    announce: Option<String>,
 }
 
 #[derive(Clone)]
@@ -63,6 +64,13 @@ struct ActiveAlarm {
     target_minute: u32,
     deadline: Instant,
 }
+
+// Feature 5: reminders are timers with a spoken label; DND suppresses them.
+static DND_MODE: AtomicBool = AtomicBool::new(false);
+// Feature 6: adaptive volume follows the measured noise floor. Disabled by default at night.
+static ADAPTIVE_VOLUME: AtomicBool = AtomicBool::new(false);
+static ADAPTIVE_BASE_VOLUME: AtomicU32 = AtomicU32::new(35);
+static LAST_ADAPTIVE_TICK: Mutex<Option<Instant>> = Mutex::new(None);
 
 static LOCAL_TIMER: Mutex<Option<ActiveTimer>> = Mutex::new(None);
 static LOCAL_ALARM: Mutex<Option<ActiveAlarm>> = Mutex::new(None);
@@ -76,6 +84,15 @@ static FIFO_MIC_CONTROL: &str = "/tmp/mic.control";
 static MIC_MUTED: AtomicBool = AtomicBool::new(false);
 static LAST_MIC_MUTE_TOGGLE: Mutex<Option<Instant>> = Mutex::new(None);
 static LAST_VOLUME_TOUCH: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// Fire-and-forget without leaking zombies: a tiny waiter owns the child.
+fn spawn_reaped(cmd: &mut Command) {
+    if let Ok(mut child) = cmd.spawn() {
+        std::thread::spawn(move || {
+            let _ = child.wait();
+        });
+    }
+}
 
 fn set_hardware_mic_mute(mute: bool) {
     if let Some(sock) = find_pulse_socket() {
@@ -95,7 +112,7 @@ fn play_sound_file(path: &str) {
     if let Some(ref s) = sock {
         cmd.env("PULSE_SERVER", format!("unix:{s}"));
     }
-    let _ = cmd.spawn();
+    spawn_reaped(&mut cmd);
 }
 
 fn apply_mic_mute(mute: bool, _announce: bool) {
@@ -220,6 +237,17 @@ fn find_yandex_token() -> Option<String> {
 // 3. Hardware LED Ring & Screen
 // ---------------------------------------------------------------------------
 fn set_ring(cmd: &str) {
+    if let Ok(mut log) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/ring_calls.log")
+    {
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let _ = writeln!(log, "{ts} {cmd}");
+    }
     for _ in 0..4 {
         if let Ok(mut f) = OpenOptions::new()
             .write(true)
@@ -286,7 +314,7 @@ fn apply_digit_mask(pins: &DigitPins, mask: u8, leds: &mut [bool; 31]) {
 }
 
 static SCREEN_OVERLAY: std::sync::Mutex<Option<(u32, Instant)>> = std::sync::Mutex::new(None);
-static CURRENT_VOLUME: AtomicU32 = AtomicU32::new(35);
+static CURRENT_VOLUME: AtomicU32 = AtomicU32::new(20);
 
 fn show_volume_overlay(vol: u32) {
     if let Ok(mut g) = SCREEN_OVERLAY.lock() {
@@ -300,12 +328,9 @@ fn apply_volume(vol: u32) {
     if let Some(ref s) = sock {
         cmd.env("PULSE_SERVER", format!("unix:{s}"));
     }
-    let _ = cmd.args(["set-sink-volume", "master", &format!("{vol}%")]).spawn();
-    let mut cmd_mute = Command::new("pactl");
-    if let Some(ref s) = sock {
-        cmd_mute.env("PULSE_SERVER", format!("unix:{s}"));
-    }
-    let _ = cmd_mute.args(["set-sink-mute", "master", "0"]).spawn();
+    cmd.args(["set-sink-volume", "master", &format!("{vol}%")]);
+    spawn_reaped(&mut cmd);
+    // Do not unmute here. A muted capsule must stay silent at night.
 }
 
 fn set_ring_volume(vol: u32) {
@@ -585,8 +610,8 @@ fn spawn_speech_stream(sample_rate: u32) -> Option<std::sync::mpsc::Sender<Vec<u
         &format!("--rate={sample_rate}"),
         "--channels=1",
         "--format=s16le",
-        // Низкая задержка: 120 мс буфера вместо дефолтных ~2 с.
-        "--latency-msec=120",
+        // Низкая задержка: 80 мс буфера вместо дефолтных ~2 с.
+        "--latency-msec=80",
     ]);
     if let Some(ref s) = sock {
         cmd.env("PULSE_SERVER", format!("unix:{s}"));
@@ -615,7 +640,7 @@ fn spawn_speech_stream(sample_rate: u32) -> Option<std::sync::mpsc::Sender<Vec<u
         let _ = PLAYBACK_PID.compare_exchange(pid, 0, Ordering::SeqCst, Ordering::SeqCst);
     });
 
-    println!("[TTS] Потоковое воспроизведение запущено (pacat PID={pid}, latency=120ms)");
+    println!("[TTS] Потоковое воспроизведение запущено (pacat PID={pid}, latency=80ms)");
     Some(tx)
 }
 
@@ -644,34 +669,135 @@ fn send_music_cmd(cmd: &str) {
     }
 }
 
-fn duck_music() {
-    // Приглушаем ТОЛЬКО поток Яндекс-плеера (музыку). Раньше скрипт брал все
-    // sink-input'ы на master, включая собственную речь Алисы — она глохла.
-    let script = r#"
+/// Named internet radio: search a public station directory, then stream the
+/// resolved URL through capsula-audio -> paplay. No Yandex "wave" involved.
+async fn play_named_radio(name: &str) -> bool {
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    let response = match client
+        .get("https://de1.api.radio-browser.info/json/stations/search")
+        .query(&[
+            ("name", name),
+            ("hidebroken", "true"),
+            // Our decoder handles MP3 only. Radio Vanya's main stream is AAC+,
+            // so without this filter the station is found but stays silent.
+            ("codec", "MP3"),
+            ("order", "clickcount"),
+            ("reverse", "true"),
+            ("limit", "10"),
+        ])
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            println!("[Radio] Поиск станции «{name}» недоступен: {}", e.to_string());
+            return false;
+        }
+    };
+    let value: serde_json::Value = match response.json().await {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    let mut chosen: Option<(String, String)> = None;
+    let mut fallback: Option<(String, String)> = None;
+    if let Some(items) = value.as_array() {
+        for item in items {
+            let stream = item
+                .get("url_resolved")
+                .and_then(serde_json::Value::as_str)
+                .filter(|s| !s.is_empty())
+                .or_else(|| item.get("url").and_then(serde_json::Value::as_str))
+                .unwrap_or("");
+            if !stream.starts_with("http://") && !stream.starts_with("https://") {
+                continue;
+            }
+            let title = item
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(name)
+                .to_string();
+            let candidate = (title, stream.to_string());
+            let bitrate = item.get("bitrate").and_then(serde_json::Value::as_u64).unwrap_or(0);
+            if bitrate == 0 {
+                if fallback.is_none() {
+                    fallback = Some(candidate);
+                }
+                continue;
+            }
+            chosen = Some(candidate);
+            break;
+        }
+    }
+    if chosen.is_none() {
+        chosen = fallback;
+    }
+    let (title, stream) = match chosen {
+        Some(v) => v,
+        None => {
+            println!("[Radio] Станция «{name}» не найдена в каталоге.");
+            return false;
+        }
+    };
+    println!("[Radio] Найдена станция: {title}");
+    println!("[Radio] Поток: {stream}");
+
+    send_music_cmd("stop");
+    let _ = Command::new("killall").args(["-9", "capsula-audio", "paplay"]).status();
+    let safe_stream = stream.replace('\'', "");
+    let script = format!(
+        "/usr/bin/capsula-audio --gain 0 --fade-in 250 '{safe_stream}' | /usr/bin/paplay --latency-msec=80"
+    );
+    let mut cmd = Command::new("sh");
+    cmd.arg("-c").arg(script);
+    if let Some(sock) = find_pulse_socket() {
+        cmd.env("PULSE_SERVER", format!("unix:{sock}"));
+    }
+    spawn_reaped(&mut cmd);
+    true
+}
+
+fn music_sink_input_ids_script(volume: u32) -> String {
+    // Only music streams: Yandex player and paplay used by radio/TTS.
+    // pacat (Alice speech) must stay at full volume.
+    format!(r#"
 SOCK=$(grep -o '/tmp/pulse-[^/]*/native' /proc/net/unix | head -n 1)
 [ -n "$SOCK" ] || exit 0
-pactl --server=unix:$SOCK list sink-inputs 2>/dev/null | awk '
-  /^Sink Input #/ { id=substr($3,2); app="" }
-  /application.name = "yandex-player"/ { print id }
-' | while read -r id; do
-  [ -n "$id" ] && pactl --server=unix:$SOCK set-sink-input-volume "$id" 13107 2>/dev/null
+CURRENT=""
+MATCH=0
+dump_input() {{
+  if [ -n "$CURRENT" ] && [ "$MATCH" -eq 1 ]; then echo "$CURRENT"; fi
+}}
+pactl --server=unix:$SOCK list sink-inputs 2>/dev/null | while IFS= read -r LINE; do
+  case "$LINE" in
+    "Sink Input #"*) dump_input; CURRENT=${{LINE#Sink Input #}}; MATCH=0 ;;
+    *'application.name = "yandex-player"'*) MATCH=1 ;;
+    *'application.name = "paplay"'*) MATCH=1 ;;
+  esac
 done
-"#;
-    let _ = Command::new("sh").arg("-c").arg(script).spawn();
+dump_input | while read -r ID; do
+  [ -n "$ID" ] && pactl --server=unix:$SOCK set-sink-input-volume "$ID" {volume} 2>/dev/null
+done
+"#)
+}
+
+fn duck_music() {
+    // While listening, music drops to 10% of its own stream volume.
+    let mut cmd = Command::new("sh");
+    cmd.arg("-c").arg(music_sink_input_ids_script(6554));
+    spawn_reaped(&mut cmd);
 }
 
 fn unduck_music() {
-    let script = r#"
-SOCK=$(grep -o '/tmp/pulse-[^/]*/native' /proc/net/unix | head -n 1)
-[ -n "$SOCK" ] || exit 0
-pactl --server=unix:$SOCK list sink-inputs 2>/dev/null | awk '
-  /^Sink Input #/ { id=substr($3,2); app="" }
-  /application.name = "yandex-player"/ { print id }
-' | while read -r id; do
-  [ -n "$id" ] && pactl --server=unix:$SOCK set-sink-input-volume "$id" 65536 2>/dev/null
-done
-"#;
-    let _ = Command::new("sh").arg("-c").arg(script).spawn();
+    // Restore full stream volume after command/speech.
+    let mut cmd = Command::new("sh");
+    cmd.arg("-c").arg(music_sink_input_ids_script(65536));
+    spawn_reaped(&mut cmd);
 }
 
 // ---------------------------------------------------------------------------
@@ -793,7 +919,7 @@ impl UniproxySession {
         // Wait for final result
         let mut final_text = String::new();
         let mut result_count = 0usize;
-        let deadline = Instant::now() + Duration::from_millis(3500);
+        let deadline = Instant::now() + Duration::from_millis(2200);
 
         while Instant::now() < deadline {
             let wait_dur = if final_text.is_empty() { Duration::from_millis(800) } else { Duration::from_millis(200) };
@@ -871,6 +997,10 @@ impl UniproxySession {
             Some(w) => w,
             None => self.connect_and_sync().await?,
         };
+        let t_vins_start = Instant::now();
+        let mut tts_sent_at: Option<Instant> = None;
+        let mut first_audio_logged = false;
+        let mut last_audio_at: Option<Instant> = None;
         let dev_uuid = uuid_v4_hex();
 
         // 1. Send Vins TextInput
@@ -929,6 +1059,24 @@ impl UniproxySession {
         let mut deadline = Instant::now() + Duration::from_millis(9000);
 
         while Instant::now() < deadline {
+            // TTS-поток часто не присылает streamcontrol сразу после последнего
+            // аудиочанка. Не ждём 9–15 с: обрываем через 1200 мс тишины в аудио.
+            if tts_requested {
+                if let Some(ts) = last_audio_at {
+                    if ts.elapsed() > Duration::from_millis(1200) {
+                        break;
+                    }
+                }
+                // TTS запрос ушёл, но ни одного аудиочанка нет — не висим 15 с.
+                if !got_audio {
+                    if let Some(ts) = tts_sent_at {
+                        if ts.elapsed() > Duration::from_millis(4500) {
+                            eprintln!("[Latency] TTS timeout: нет аудио за 4500 мс");
+                            break;
+                        }
+                    }
+                }
+            }
             let step_timeout = if tts_requested {
                 Duration::from_millis(1500)
             } else {
@@ -947,6 +1095,11 @@ impl UniproxySession {
                                         reply_text = t.to_string();
                                         break;
                                     }
+                                }
+                            }
+                            if reply_text.is_empty() {
+                                if let Some(t) = resp.and_then(|r| r.pointer("/card/text")).and_then(|s| s.as_str()) {
+                                    reply_text = t.to_string();
                                 }
                             }
                             if reply_text.is_empty() {
@@ -970,6 +1123,12 @@ impl UniproxySession {
                             if reply_text.is_empty() {
                                 reply_text = "Я вас слушаю!".to_string();
                             }
+                            // Vins иногда отдаёт служебный отказ вместо ответа.
+                            // Не озвучиваем его: лучше естественный короткий ответ.
+                            if reply_text.contains("Не придумала") || reply_text.contains("не придумала") {
+                                println!("[Vins] Получен служебный отказ, используем запасную фразу.");
+                                reply_text = "Я вас слушаю. Спросите ещё раз чуть иначе.".to_string();
+                            }
 
                             // Пайплайн: шлём TTS.Generate в тот же WebSocket без нового TLS-хендшейка
                             let tts_req = json!({
@@ -984,7 +1143,7 @@ impl UniproxySession {
                                         "lang": "ru-RU",
                                         "format": "audio/x-pcm;bit=16;rate=48000",
                                         "emotion": "neutral",
-                                        "quality": "UltraHigh",
+                                        "quality": "Normal",
                                         "text": reply_text,
                                         "auth_token": self.token
                                     }
@@ -992,6 +1151,7 @@ impl UniproxySession {
                             });
                             ws.send(Message::Text(tts_req.to_string().into())).await?;
                             tts_requested = true;
+                            tts_sent_at = Some(Instant::now());
                             deadline = Instant::now() + Duration::from_millis(15000);
                         } else if v.pointer("/streamcontrol/action").and_then(|a| a.as_i64()) == Some(0) {
                             if tts_requested {
@@ -1012,7 +1172,7 @@ impl UniproxySession {
                                             "lang": "ru-RU",
                                             "format": "audio/x-pcm;bit=16;rate=48000",
                                             "emotion": "neutral",
-                                            "quality": "UltraHigh",
+                                            "quality": "Normal",
                                             "text": reply_text,
                                             "auth_token": self.token
                                         }
@@ -1020,6 +1180,7 @@ impl UniproxySession {
                                 });
                                 ws.send(Message::Text(tts_req.to_string().into())).await?;
                                 tts_requested = true;
+                                tts_sent_at = Some(Instant::now());
                                 deadline = Instant::now() + Duration::from_millis(15000);
                             }
                         }
@@ -1030,6 +1191,14 @@ impl UniproxySession {
                         let chunk = &bin[4..];
                         total_pcm += chunk.len();
                         got_audio = true;
+                        last_audio_at = Some(Instant::now());
+                        if !first_audio_logged {
+                            first_audio_logged = true;
+                            if let Some(ts) = tts_sent_at {
+                                println!("[Latency] TTS first chunk: {} ms (Vins+WS total: {} ms)",
+                                         ts.elapsed().as_millis(), t_vins_start.elapsed().as_millis());
+                            }
+                        }
                         if let Some(ref tx) = audio_tx {
                             // Не блокируем сетевой цикл на диске/stdin.
                             let _ = tx.send(chunk.to_vec());
@@ -1052,14 +1221,24 @@ impl UniproxySession {
         }
 
         let _ = ws.close(None).await;
+        if tts_requested && !got_audio {
+            return Err(anyhow::anyhow!("TTS не вернул аудио"));
+        }
         if reply_text.is_empty() {
             reply_text = "Я вас слушаю!".to_string();
         }
         Ok((reply_text, pcm_duration(total_pcm, SAMPLE_RATE_PLAY), has_music, has_pause, track_id))
     }
 
-    async fn synthesize_tts_pcm(&self, text: &str) -> Result<Vec<u8>> {
-        let mut ws = self.connect_and_sync().await?;
+    async fn synthesize_tts_pcm(
+        &self,
+        text: &str,
+        pre_ws: Option<WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>>,
+    ) -> Result<Vec<u8>> {
+        let mut ws = match pre_ws {
+            Some(w) => w,
+            None => self.connect_and_sync().await?,
+        };
         let msg_id = uuid_v4();
         let tts_req = json!({
             "event": {
@@ -1073,7 +1252,7 @@ impl UniproxySession {
                     "lang": "ru-RU",
                     "format": "audio/x-pcm;bit=16;rate=48000",
                     "emotion": "neutral",
-                    "quality": "UltraHigh",
+                    "quality": "Normal",
                     "text": text,
                     "auth_token": self.token
                 }
@@ -1157,6 +1336,14 @@ fn compute_rms(samples: &[i16]) -> f32 {
     }
     let sum_sq: f64 = samples.iter().map(|&s| (s as f64) * (s as f64)).sum();
     ((sum_sq / (samples.len() as f64)).sqrt()) as f32
+}
+
+// Keyboard clicks and knocks have a much higher peak/RMS ratio than speech.
+fn compute_peak(samples: &[i16]) -> f32 {
+    samples
+        .iter()
+        .map(|&s| if s < 0 { -(s as f32) } else { s as f32 })
+        .fold(0.0f32, f32::max)
 }
 
 fn parse_russian_num(s: &str) -> Option<u64> {
@@ -1254,6 +1441,66 @@ fn parse_timer_command(cmd: &str) -> Option<TimerAction> {
     }
 }
 
+/// Feature 5: «напомни мне через 10 минут выключить плиту» -> (600, "выключить плиту").
+fn parse_reminder_command(cmd: &str) -> Option<(u64, String)> {
+    if !cmd.contains("напомни") && !cmd.contains("напоминани") {
+        return None;
+    }
+    if cmd.contains("отмен") || cmd.contains("сброс") || cmd.contains("удали") {
+        return None;
+    }
+    let tokens: Vec<&str> = cmd.split_whitespace().collect();
+    let mut total_secs: u64 = 0;
+    let mut consumed = vec![false; tokens.len()];
+    let mut i = 0;
+    while i < tokens.len() {
+        if let Some(num) = parse_russian_num(tokens[i]) {
+            let unit = if i + 1 < tokens.len() { tokens[i + 1] } else { "" };
+            if unit.starts_with("сек") {
+                total_secs += num;
+                consumed[i] = true;
+                consumed[i + 1] = true;
+                i += 2;
+                continue;
+            } else if unit.starts_with("мин") {
+                total_secs += num * 60;
+                consumed[i] = true;
+                consumed[i + 1] = true;
+                i += 2;
+                continue;
+            } else if unit.starts_with("час") {
+                total_secs += num * 3600;
+                consumed[i] = true;
+                consumed[i + 1] = true;
+                i += 2;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    if total_secs == 0 {
+        return None;
+    }
+    let text: Vec<&str> = tokens
+        .iter()
+        .enumerate()
+        .filter(|(idx, _)| !consumed[*idx])
+        .map(|(_, t)| *t)
+        .filter(|t| {
+            !matches!(
+                *t,
+                "напомни" | "напомнить" | "напоминание" | "мне" | "через" | "и" | "да" | "пожалуйста"
+            )
+        })
+        .collect();
+    let what = if text.is_empty() {
+        "что-то".to_string()
+    } else {
+        text.join(" ")
+    };
+    Some((total_secs, what))
+}
+
 enum AlarmAction {
     Set(u32, u32, String),
     Status,
@@ -1340,7 +1587,7 @@ fn play_alarm_sound(kind: &str) {
     if let Some(ref s) = sock {
         cmd.env("PULSE_SERVER", format!("unix:{s}"));
     }
-    let _ = cmd.spawn();
+    spawn_reaped(&mut cmd);
 }
 
 fn enable_bluetooth() {
@@ -1540,28 +1787,31 @@ async fn main() -> Result<()> {
     };
 
     // 3. Unmute speex source and mute Marusia in PulseAudio
-    let _ = Command::new("sh")
-        .arg("-c")
-        .arg(r#"
+    let mut mic_setup = Command::new("sh");
+    mic_setup.arg("-c").arg(r#"
 SOCK=$(grep -o '/tmp/pulse-[^/]*/native' /proc/net/unix | head -n 1)
 if [ -n "$SOCK" ]; then
-    pactl --server=unix:$SOCK set-source-volume speex 65536 2>/dev/null
+    pactl --server=unix:$SOCK set-source-volume speex 98304 2>/dev/null
     pactl --server=unix:$SOCK set-source-mute speex 0 2>/dev/null
     pactl --server=unix:$SOCK load-module module-null-sink sink_name=silence 2>/dev/null
     pactl --server=unix:$SOCK set-default-source speex 2>/dev/null
-    for so in $(pactl --server=unix:$SOCK list source-outputs short 2>/dev/null | awk '{print $1}'); do
-        app=$(pactl --server=unix:$SOCK list source-outputs 2>/dev/null | awk -v id="$so" '
-            $0 ~ "Source Output #" id {found=1}
-            found && /application.name =/ {print; exit}
-            found && /^$/ {exit}
-        ')
-        if echo "$app" | grep -qi "Mailru"; then
-            pactl --server=unix:$SOCK move-source-output "$so" silence.monitor 2>/dev/null
-            pactl --server=unix:$SOCK set-source-output-mute "$so" 1 2>/dev/null
-        fi
+    CURRENT=""
+    pactl --server=unix:$SOCK list source-outputs 2>/dev/null | while IFS= read -r LINE; do
+        case "$LINE" in
+            "Source Output #"*) CURRENT=${LINE#Source Output #} ;;
+            *'application.name ='*)
+                if echo "$LINE" | grep -qi "Mailru"; then
+                    [ -n "$CURRENT" ] && echo "$CURRENT"
+                fi
+                ;;
+        esac
+    done | while read -r SO; do
+        pactl --server=unix:$SOCK move-source-output "$SO" silence.monitor 2>/dev/null
+        pactl --server=unix:$SOCK set-source-output-mute "$SO" 1 2>/dev/null
     done
 fi
-"#).spawn();
+"#);
+    spawn_reaped(&mut mic_setup);
 
     // 4. Setup touch monitor & mic control
     let (wake_tx, mut wake_rx) = mpsc::channel(8);
@@ -1613,10 +1863,15 @@ fi
 
     println!("[Daemon] Голосовой сервис активен. Слушаю «Алиса» или касание панели!\n");
 
-    let mut audio_pre_buffer: VecDeque<Vec<u8>> = VecDeque::with_capacity(12);
-    let mut noise_floor = 220.0f32;
+    // 25 чанков = 500 мс: «Алиса привет» не должен терять начало «привет».
+    let mut audio_pre_buffer: VecDeque<Vec<u8>> = VecDeque::with_capacity(25);
+    // Аудио до детекции wake word: «Алиса привет» должно не терять «привет».
+    let mut pending_seed: Vec<Vec<u8>> = Vec::new();
+    let mut noise_floor = 120.0f32;
     let mut state = "WAITING_WAKEWORD";
     let mut followup_deadline = Instant::now();
+    // Защита от эха собственного ответа в первые мгновения окна продолжения.
+    let mut followup_guard_until = Instant::now();
     let mut followup_speech_chunks: u32 = 0;
     let mut speech_end_time = Instant::now();
     let mut last_debug_log = Instant::now();
@@ -1625,7 +1880,6 @@ fi
     // Локальный споттер пишет в этот файл; облачный ASR в ожидании не вызывается.
     let _ = std::fs::remove_file(WAKE_TRIGGER_FILE);
     let _ = File::create(WAKE_TRIGGER_FILE);
-    let mut last_trigger_len: u64 = 0;
 
     loop {
         // Read 100ms chunk from real-time channel
@@ -1650,20 +1904,51 @@ fi
         }
 
         let rms = compute_rms(&samples);
+        let peak = compute_peak(&samples);
         if rms < noise_floor {
             noise_floor = 0.90 * noise_floor + 0.10 * rms;
         } else {
             noise_floor = 0.995 * noise_floor + 0.005 * rms;
         }
-        noise_floor = noise_floor.clamp(100.0, 500.0);
+        // Не даём голосу поднимать «шумовой пол» до своего уровня:
+        // иначе порог речи догоняет речь и колонка перестаёт слышать.
+        noise_floor = noise_floor.clamp(80.0, 220.0);
 
-        // Calibrated sensitivity:
-        // Ambient room noise is typically ~180-260 RMS.
-        // Direct human speech to Alice is >1200 RMS (often 2500-8000 RMS).
-        let speech_threshold = (noise_floor * 1.5 + 80.0).max(280.0);
-        let silence_threshold = noise_floor * 1.3 + 80.0;
+        // Feature 6: адаптивная громкость по шуму помещения (как smart_volume в Quasar).
+        // Правило: не трогаем громкость, пока говорим/слушаем/звонит будильник,
+        // и не перебиваем пользователя, если он сам менял громкость за последние 60 с.
+        if ADAPTIVE_VOLUME.load(Ordering::SeqCst)
+            && state == "WAITING_WAKEWORD"
+            && !ALARM_RINGING.load(Ordering::SeqCst)
+            && !MIC_MUTED.load(Ordering::SeqCst)
+        {
+            let due = LAST_ADAPTIVE_TICK.lock().unwrap()
+                .map(|t| t.elapsed() >= Duration::from_secs(20))
+                .unwrap_or(true);
+            let user_touched = LAST_VOLUME_TOUCH.lock().unwrap()
+                .map(|t| t.elapsed() < Duration::from_secs(60))
+                .unwrap_or(false);
+            if due && !user_touched {
+                *LAST_ADAPTIVE_TICK.lock().unwrap() = Some(Instant::now());
+                let base = ADAPTIVE_BASE_VOLUME.load(Ordering::SeqCst);
+                let shift = ((noise_floor - 120.0) / 5.0) as i32;
+                let target = ((base as i32) + shift).clamp(15, 45) as u32;
+                let cur = CURRENT_VOLUME.load(Ordering::SeqCst);
+                if target.abs_diff(cur) >= 3 {
+                    let next = if target > cur { cur + 2 } else { cur - 2 };
+                    CURRENT_VOLUME.store(next, Ordering::SeqCst);
+                    apply_volume(next);
+                    println!("[SmartVolume] фон {:.0} -> громкость {}%", noise_floor, next);
+                }
+            }
+        }
 
-        if audio_pre_buffer.len() >= 10 {
+        // Чувствительность: нормальная речь с расстояния ~1 м даёт RMS 300-800.
+        // Старые пороги 280+ требовали кричать в микрофон.
+        let speech_threshold = (noise_floor * 1.10 + 30.0).max(150.0);
+        let silence_threshold = noise_floor * 1.05 + 30.0;
+
+        if audio_pre_buffer.len() >= 25 {
             audio_pre_buffer.pop_front();
         }
         audio_pre_buffer.push_back(chunk_buf.clone());
@@ -1717,6 +2002,10 @@ fi
                 }
             }
             if fired {
+                if DND_MODE.load(Ordering::SeqCst) && kind == "alarm" {
+                    println!("[Alarm] Будильник подавлен режимом «не беспокоить».");
+                    continue;
+                }
                 println!("[Timer/Alarm] Сработал сигнал: {kind}!");
                 ALARM_RINGING.store(true, Ordering::SeqCst);
                 *ALARM_RINGING_KIND.lock().unwrap() = kind.clone();
@@ -1792,7 +2081,7 @@ fi
                     state = "WAITING_WAKEWORD";
                     continue;
                 }
-                println!("[*] Алиса закончила ответ. Слушаю продолжение 3 с...");
+                println!("[*] Алиса закончила ответ. Слушаю продолжение 10 с...");
                 unduck_music();
                 set_ring("listen");
                 set_alice_busy(false);
@@ -1802,6 +2091,7 @@ fi
                 audio_pre_buffer.clear();
                 noise_floor = 180.0;
                 followup_deadline = Instant::now() + FOLLOWUP_WINDOW;
+                followup_guard_until = Instant::now() + Duration::from_millis(700);
                 state = "FOLLOWUP_LISTEN";
                 continue;
             }
@@ -1844,30 +2134,41 @@ fi
                 continue;
             }
 
-            // В режиме продолжения диалога требуем уверенный человеческий голос (RMS > 550)
-            // и минимум 4 чанка подряд (~80 мс), чтобы не перебиваться случайными шумами,
-            // скрипом стула или фоновым разговором в комнате.
-            let followup_threshold = (noise_floor * 1.8 + 150.0).max(550.0);
+            // Продолжение диалога: явный wake word ИЛИ уверенная речь после
+            // короткой защиты от эха собственного ответа.
             if activated {
                 followup_speech_chunks = 0;
                 println!("[!] Активация продолжения диалога по триггеру «Алиса» / сенсору!");
                 set_alice_busy(true);
                 set_ring("listen");
+                pending_seed = audio_pre_buffer.iter().cloned().collect();
+                audio_pre_buffer.clear();
                 listen_deadline = Instant::now() + COMMAND_LISTEN_WINDOW;
                 state = "RECORDING_COMMAND";
-                while pcm_rx.try_recv().is_ok() {}
-                audio_pre_buffer.clear();
-            } else if rms > followup_threshold {
+                continue;
+            }
+
+            if Instant::now() < followup_guard_until {
+                followup_speech_chunks = 0;
+                continue;
+            }
+
+            let followup_threshold = (noise_floor * 1.2 + 50.0).max(260.0);
+            let crest = peak / rms.max(1.0);
+            // Клавиатура/стук дают короткий пик при низком среднем уровне.
+            // Речь держит_CREST не выше ~6–7; всё, что выше, — ударный шум.
+            if rms > followup_threshold && crest < 8.0 {
                 followup_speech_chunks += 1;
-                if followup_speech_chunks >= 4 {
+                if followup_speech_chunks >= 6 {
                     followup_speech_chunks = 0;
-                    println!("[!] Продолжение диалога: зафиксирована уверенная речь (RMS={:.0} > {:.0})!", rms, followup_threshold);
+                    println!("[!] Продолжение диалога: уверенная речь (RMS={:.0} > {:.0}, crest={:.1}).", rms, followup_threshold, crest);
                     set_alice_busy(true);
                     set_ring("listen");
+                    pending_seed = audio_pre_buffer.iter().cloned().collect();
+                    audio_pre_buffer.clear();
                     listen_deadline = Instant::now() + COMMAND_LISTEN_WINDOW;
                     state = "RECORDING_COMMAND";
-                    while pcm_rx.try_recv().is_ok() {}
-                    audio_pre_buffer.clear();
+                    continue;
                 }
             } else {
                 followup_speech_chunks = 0;
@@ -1899,9 +2200,12 @@ fi
                 let _ = std::fs::write(WAKE_TRIGGER_FILE, "");
                 duck_music();
                 set_ring("listen");
+                // Сохраняем preacher-чанки и НЕ выбрасываем уже пришедший PCM:
+                // иначе «Алиса привет» теряет вторую часть фразы.
+                pending_seed = audio_pre_buffer.iter().cloned().collect();
+                audio_pre_buffer.clear();
                 listen_deadline = Instant::now() + COMMAND_LISTEN_WINDOW;
                 state = "RECORDING_COMMAND";
-                while pcm_rx.try_recv().is_ok() {}
                 continue;
             }
 
@@ -1913,23 +2217,57 @@ fi
         // -------------------------------------------------------------------
         if state == "RECORDING_COMMAND" {
             set_ring("listen");
+            let t_record_start = Instant::now();
 
-            // Заранее устанавливаем и авторизуем WebSocket пока пользователь произносит команду (экономия ~450 мс!)
-            let uniproxy_clone = uniproxy.clone();
+            // Заранее устанавливаем ДВА WebSocket, пока пользователь произносит команду:
+            // один для ASR, второй для Vins. Раньше Vins-канал открывался только после
+            // ASR, и cold-connect съедал ~20 с — ответ приходил через 21 с после активации.
+            let up_asr = uniproxy.clone();
             let warm_ws_task = tokio::spawn(async move {
-                uniproxy_clone.connect_and_sync().await
+                up_asr.connect_and_sync().await
+            });
+            let up_vins = uniproxy.clone();
+            let warm_vins_ws_task = tokio::spawn(async move {
+                up_vins.connect_and_sync().await
             });
 
             let mut command_chunks: Vec<Vec<u8>> = Vec::with_capacity(250);
-            let mut pre_chunks: VecDeque<Vec<u8>> = VecDeque::with_capacity(10);
+            if pending_seed.len() > 25 {
+                let drop_n = pending_seed.len() - 25;
+                pending_seed.drain(..drop_n);
+            }
+            let mut pre_chunks: VecDeque<Vec<u8>> = pending_seed.drain(..).collect();
+
+            // Wake word мог сработать уже во время фразы («Алиса привет»).
+            // Если prebuffer содержит уверенную речь, не ждём НОВОГО всплеска
+            // RMS — иначе «привет», сказанный сразу, теряется полностью.
+            let seed_threshold = (noise_floor * 1.10 + 30.0).max(150.0);
+            let seed_speech_chunks = pre_chunks
+                .iter()
+                .filter(|chunk| {
+                    let mut sum = 0.0f64;
+                    for i in 0..CHUNK_SAMPLES {
+                        let s = i16::from_le_bytes([chunk[i * 2], chunk[i * 2 + 1]]) as f64;
+                        sum += s * s;
+                    }
+                    (sum / CHUNK_SAMPLES as f64).sqrt() > seed_threshold as f64
+                })
+                .count();
+
             let mut speech_consecutive = 0;
             let mut silence_chunks = 0;
-            let mut user_started_speaking = false;
+            let mut user_started_speaking = seed_speech_chunks >= 3;
             let mut heard_speech = false;
-            // 3 секунды — это окно ОЖИДАНИЯ НАЧАЛА фразы. Как только человек
+            // 10 секунд — это окно ОЖИДАНИЯ НАЧАЛА фразы. Как только человек
             // заговорил, дедлайн снимается: иначе длинная фраза обрывалась бы
             // ровно на 3-й секунде. Ограничителем дальше работает VAD по паузе.
             let mut speaking_deadline: Option<Instant> = None;
+
+            if user_started_speaking {
+                command_chunks.extend(pre_chunks.drain(..));
+                listen_deadline = Instant::now() + Duration::from_secs(20);
+                println!("[*] Речь уже звучала до срабатывания wake word ({} чанков) — продолжаем запись.", seed_speech_chunks);
+            }
 
             while Instant::now() < listen_deadline {
                 let remaining = listen_deadline.saturating_duration_since(Instant::now());
@@ -1941,7 +2279,7 @@ fi
                             .collect();
                         let cur_rms = compute_rms(&cur_samples);
 
-                        let cmd_threshold = (noise_floor * 1.5 + 50.0).max(350.0);
+                        let cmd_threshold = (noise_floor * 1.10 + 30.0).max(150.0);
                         if !user_started_speaking {
                             if pre_chunks.len() >= 10 {
                                 pre_chunks.pop_front();
@@ -1950,10 +2288,10 @@ fi
 
                             if cur_rms > cmd_threshold {
                                 speech_consecutive += 1;
-                                if speech_consecutive >= 4 { // 80 мс непрерывной речи вместо 40 мс
+                                if speech_consecutive >= 3 { // 60 мс — мягкий старт фразы
                                     user_started_speaking = true;
                                     command_chunks.extend(pre_chunks.drain(..));
-                                    listen_deadline = Instant::now() + Duration::from_secs(12);
+                                    listen_deadline = Instant::now() + Duration::from_secs(20);
                                     println!("[*] Начало команды зафиксировано (RMS={:.0} > {:.0}).", cur_rms, cmd_threshold);
                                 }
                             } else {
@@ -1965,15 +2303,16 @@ fi
                                 silence_chunks = 0;
                             } else {
                                 silence_chunks += 1;
-                                // VAD: 320 мс паузы = конец фразы, минимум 300 мс речи
-                                if silence_chunks >= 28 && command_chunks.len() >= 15 {
+                                // VAD: 800 мс паузы = конец фразы, минимум 300 мс речи
+                                if silence_chunks >= 40 && command_chunks.len() >= 15 {
                                     println!("[*] VAD: Конец фразы зафиксирован по паузе ({} чанков, ~{:.1}с).", command_chunks.len(), (command_chunks.len() as f32) * 0.02);
+                                    println!("[Latency] VAD: {} ms после активации", t_record_start.elapsed().as_millis());
                                     heard_speech = true;
                                     break;
                                 }
                             }
                         }
-                        if command_chunks.len() >= 250 {
+                        if command_chunks.len() >= 400 {
                             heard_speech = true;
                             break;
                         }
@@ -2009,9 +2348,17 @@ fi
                 Ok(Ok(w)) => Some(w),
                 _ => None,
             };
+            // Второй канал греется параллельно с ASR, чтобы Vins не делал
+            // холодный TLS-handshake после распознавания.
+            let vins_ws = match warm_vins_ws_task.await {
+                Ok(Ok(w)) => Some(w),
+                _ => None,
+            };
 
+            let t_asr = Instant::now();
             match uniproxy.recognize_pcm_stream(&command_chunks, pre_ws).await {
                 Ok(raw_text) => {
+                    println!("[Latency] ASR: {} ms", t_asr.elapsed().as_millis());
                     let cmd = clean_alice_prompt(&raw_text.to_lowercase());
                     let is_noise_word = cmd == "а" || cmd == "э" || cmd == "мм" || cmd == "угу" 
                         || cmd == "ну" || cmd == "а д" || cmd == "да" || cmd == "д" || cmd == "хм";
@@ -2029,17 +2376,17 @@ fi
 
                     if cmd.is_empty() || (is_noise_word && !is_alice_wake(&raw_text)) {
                         if !is_noise_word && is_alice_wake(&raw_text) {
-                            println!("[Alice] Обращение «Алиса» без команды. Отвечаем и ждём продолжения...");
-                            let replies = [
-                                "Да?",
+                            println!("[Alice] Обращение «Алиса» без команды. Отвечаем через Vins и ждём продолжения...");
+                            speak_dynamic_reply(
+                                "Привет",
                                 "Слушаю вас",
-                                "Я тут",
-                                "Что включить?",
-                                "Слушаю",
-                            ];
-                            let reply = replies[rand::random::<usize>() % replies.len()];
-                            speak_text(reply, &uniproxy, &mut speech_end_time, &mut state).await;
+                                &uniproxy,
+                                vins_ws,
+                                &mut speech_end_time,
+                                &mut state,
+                            ).await;
                             followup_deadline = Instant::now() + FOLLOWUP_WINDOW;
+                            followup_guard_until = Instant::now() + Duration::from_millis(700);
                             state = "FOLLOWUP_LISTEN";
                             continue;
                         }
@@ -2052,7 +2399,7 @@ fi
                         continue;
                     }
                     println!("[ASR Команда]: «{}»", cmd);
-                    execute_command(&cmd, &uniproxy, &mut speech_end_time, &mut state).await;
+                    execute_command(&cmd, &uniproxy, vins_ws, &mut speech_end_time, &mut state).await;
                 }
                 Err(e) => {
                     eprintln!("[ASR Error]: {e}");
@@ -2064,7 +2411,7 @@ fi
                 }
             }
             while let Ok(chunk) = pcm_rx.try_recv() {
-                if audio_pre_buffer.len() >= 10 {
+                if audio_pre_buffer.len() >= 25 {
                     audio_pre_buffer.pop_front();
                 }
                 audio_pre_buffer.push_back(chunk);
@@ -2189,9 +2536,46 @@ fn clean_alice_prompt(raw: &str) -> String {
         .to_string()
 }
 
+/// Живой ответ через Yandex Vins. Локальная фраза используется только если
+/// интернет недоступен — обычные реплики больше не берутся из захардкоженного списка.
+async fn speak_dynamic_reply(
+    prompt: &str,
+    fallback: &str,
+    uniproxy: &UniproxySession,
+    vins_ws: Option<WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>>,
+    speech_end_time: &mut Instant,
+    state: &mut &'static str,
+) {
+    set_alice_busy(true);
+    set_ring("think");
+    let stream_start = Instant::now();
+    let reply_tx = spawn_speech_stream(SAMPLE_RATE_PLAY);
+    match uniproxy.ask_vins_and_stream(prompt, reply_tx, vins_ws).await {
+        Ok((reply, dur, has_music, has_pause, _track_id)) => {
+            println!("[Dynamic] Vins: «{reply}» (запрос: «{prompt}»)");
+            set_ring("speak");
+            if has_pause {
+                send_music_cmd("pause");
+            }
+            if has_music {
+                send_music_cmd("wave");
+                set_ring("music");
+            }
+            let remaining = dur.saturating_sub(stream_start.elapsed());
+            *speech_end_time = Instant::now() + remaining + Duration::from_millis(150);
+            *state = "SPEAKING";
+        }
+        Err(e) => {
+            eprintln!("[Dynamic] Vins недоступен ({e}); локальный ответ «{fallback}».");
+            speak_text(fallback, uniproxy, speech_end_time, state).await;
+        }
+    }
+}
+
 async fn execute_command(
     cmd: &str,
     uniproxy: &UniproxySession,
+    vins_ws: Option<WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>>,
     speech_end_time: &mut Instant,
     state: &mut &'static str,
 ) {
@@ -2208,6 +2592,20 @@ async fn execute_command(
         return;
     }
 
+    // 0.05 Feature 5: reminders («напомни мне через N минут …»)
+    if let Some((secs, what)) = parse_reminder_command(cmd) {
+        let deadline = Instant::now() + Duration::from_secs(secs);
+        *LOCAL_TIMER.lock().unwrap() = Some(ActiveTimer {
+            label: format!("напомнить:{what}"),
+            total_secs: secs,
+            deadline,
+            announce: Some(what.clone()),
+        });
+        println!("[Reminder] Напоминание через {secs} сек: «{what}»");
+        speak_text(&format!("Напомню через {secs} секунд: {what}."), uniproxy, speech_end_time, state).await;
+        return;
+    }
+
     // 0.1 Local Timers
     if let Some(action) = parse_timer_command(cmd) {
         match action {
@@ -2217,6 +2615,11 @@ async fn execute_command(
                     label: label.clone(),
                     total_secs: secs,
                     deadline,
+                    announce: if label.starts_with("напомнить:") {
+                        Some(label.trim_start_matches("напомнить:").to_string())
+                    } else {
+                        None
+                    },
                 });
                 println!("[Timer] Установлен таймер на {label} ({secs} сек)");
                 speak_text(&format!("Установила таймер на {label}."), uniproxy, speech_end_time, state).await;
@@ -2349,6 +2752,21 @@ async fn execute_command(
         return;
     }
 
+    // 0.4.1 Приветствия и small talk идут через Vins: ответ Live/интернет,
+    // локальная фраза остаётся только как fallback без сети.
+    let is_greeting = matches!(
+        cmd,
+        "привет" | "приветик" | "здравствуй" | "здравствуйте" | "хай"
+            | "добрый день" | "добрый вечер" | "доброе утро"
+            | "как дела" | "как ты" | "спасибо" | "благодарю"
+    );
+    if is_greeting {
+        // Vins ждёт естественную реплику пользователя. Инструкции в text
+        // («Ответь коротко…») он не понимает и возвращает служебный отказ.
+        speak_dynamic_reply(cmd, "Привет!", uniproxy, vins_ws, speech_end_time, state).await;
+        return;
+    }
+
     // 0.5 Voice Microphone Controls ("выключи микрофон", "отключи микрофон", "выруби микрофон")
     if cmd.contains("выключи микрофон") || cmd.contains("отключи микрофон")
         || cmd.contains("заглуши микрофон") || cmd.contains("выруби микрофон")
@@ -2467,6 +2885,53 @@ async fn execute_command(
             speak_text(&format!("Установила громкость на {v} процентов."), uniproxy, speech_end_time, state).await;
             return;
         }
+    }
+
+    // 4.5 Feature 5: «не беспокоить» — глушим напоминания и будильники
+    if cmd.contains("не беспокоить") || cmd.contains("днд") {
+        let turn_off = cmd.contains("выключ") || cmd.contains("отключ") || cmd.contains("сними") || cmd.contains("отмени");
+        DND_MODE.store(!turn_off, Ordering::SeqCst);
+        let reply = if turn_off { "Режим «не беспокоить» выключен." } else { "Включаю режим «не беспокоить»." };
+        speak_text(reply, uniproxy, speech_end_time, state).await;
+        return;
+    }
+
+    // 4.6 Feature 6: адаптивная громкость
+    if cmd.contains("адаптивн") || cmd.contains("автогромкост") || cmd.contains("громкость по шуму") {
+        let turn_off = cmd.contains("выключ") || cmd.contains("отключ") || cmd.contains("перестань");
+        ADAPTIVE_VOLUME.store(!turn_off, Ordering::SeqCst);
+        if !turn_off {
+            ADAPTIVE_BASE_VOLUME.store(CURRENT_VOLUME.load(Ordering::SeqCst), Ordering::SeqCst);
+        }
+        let reply = if turn_off { "Адаптивная громкость выключена." } else { "Адаптивная громкость включена." };
+        speak_text(reply, uniproxy, speech_end_time, state).await;
+        return;
+    }
+
+    // 4.7 Радио: «Моя волна» или поиск станции через Яндекс Музыку
+    if cmd.contains("радио") || cmd.contains("мою волну") || cmd.contains("моя волна") || cmd.contains("волну") {
+        let stop = cmd.contains("выключ") || cmd.contains("останови") || cmd.contains("хватит");
+        if stop {
+            send_music_cmd("stop");
+            speak_text("Радио выключено.", uniproxy, speech_end_time, state).await;
+        } else if cmd.contains("мою волну") || cmd.contains("моя волна") || !cmd.contains("радио") {
+            send_music_cmd("wave");
+            speak_text("Включаю мою волну.", uniproxy, speech_end_time, state).await;
+        } else {
+            let query = cmd
+                .split_once("радио")
+                .map(|(_, rest)| rest.trim().to_string())
+                .unwrap_or_default();
+            if query.is_empty() {
+                send_music_cmd("wave");
+                speak_text("Включаю мою волну.", uniproxy, speech_end_time, state).await;
+            } else if play_named_radio(&query).await {
+                speak_text(&format!("Включаю радио: {query}."), uniproxy, speech_end_time, state).await;
+            } else {
+                speak_text(&format!("Не нашла радиостанцию «{query}»."), uniproxy, speech_end_time, state).await;
+            }
+        }
+        return;
     }
 
     // 5. LED Ring Nightlight Controls
@@ -2667,7 +3132,7 @@ async fn execute_command(
     let reply_tx = spawn_speech_stream(SAMPLE_RATE_PLAY);
 
     set_ring("think");
-    match uniproxy.ask_vins_and_stream(cmd, reply_tx, None).await {
+    match uniproxy.ask_vins_and_stream(cmd, reply_tx, vins_ws).await {
         Ok((reply, dur, has_music, has_pause, track_id)) => {
             let stream_elapsed = stream_start.elapsed();
             println!("[Vins Ответ]: «{}» (PCM {:.2} с, уже проиграно {:.2} с)",
@@ -2705,10 +3170,25 @@ async fn speak_text(
     speech_end_time: &mut Instant,
     state: &mut &'static str,
 ) {
+    speak_text_with_ws(text, uniproxy, None, speech_end_time, state).await;
+}
+
+/// Как speak_text, но с уже прогретым WebSocket: не делает холодный
+/// TLS-handshake между «Алиса» и ответом «Слушаю вас».
+async fn speak_text_with_ws(
+    text: &str,
+    uniproxy: &UniproxySession,
+    tts_ws: Option<WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>>,
+    speech_end_time: &mut Instant,
+    state: &mut &'static str,
+) {
     set_alice_busy(true);
-    set_ring("speak");
-    match uniproxy.synthesize_tts_pcm(text).await {
+    // Пока TTS синтезируется — кольцо думает. «speak» включаем только
+    // перед реальным воспроизведением PCM.
+    set_ring("think");
+    match uniproxy.synthesize_tts_pcm(text, tts_ws).await {
         Ok(pcm) => {
+            set_ring("speak");
             let dur = play_speech_pcm(&pcm, SAMPLE_RATE_PLAY);
             *speech_end_time = Instant::now() + dur + Duration::from_millis(150);
             *state = "SPEAKING";
