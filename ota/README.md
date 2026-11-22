@@ -32,6 +32,8 @@ The updater only accepts a fixed whitelist of destinations:
 
 Asset URLs must point to `https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/...`.
 
+Version comparison uses `sort -V`; an older manifest is ignored so a stale raw CDN response cannot downgrade a capsule. Recovery from a newer version back to an older one is possible only with `capsula-ota force`.
+
 ## Device commands
 
 ```sh
