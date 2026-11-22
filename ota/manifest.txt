@@ -1,6 +1,6 @@
 V|1
 VERSION|20261123.01
-FILE|/usr/bin/capsula-ota|capsula-ota.sh|https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/capsula-ota.sh|5d4107a1c6d6aabf071352671ca94a0330c9d933f4a29c00157c44277e67918f|11016|755
+FILE|/usr/bin/capsula-ota|capsula-ota.sh|https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/capsula-ota.sh|53a77481e0b285946828206de25fe53a30df5f72e877881f489220efd31ca810|11777|755
 FILE|/etc/init.d/S98capsula-ota|S98capsula-ota|https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/S98capsula-ota|629534dc99885a0cb9d00633120b87a75ea5e68b99aef50bad0249fd78b25932|790|755
 FILE|/usr/bin/capsula-alice|capsula-alice|https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/capsula-alice|9ee280ae508306a6cf8b85014d5c01b61532822eb15a0fc99714a453ad3de3b7|2214872|755
 FILE|/usr/bin/ring_daemon|ring_daemon|https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/ring_daemon|1eced2e49df001e74e974a2f76a0175d9376cb2c212858e918a2b8578b6e8437|1773152|755
