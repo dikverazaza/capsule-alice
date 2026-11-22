@@ -1,0 +1,50 @@
+#!/bin/sh
+# /etc/init.d/S50avahi-daemon
+DAEMON=/usr/sbin/avahi-daemon
+OTA_BIN=/usr/bin/capsula-ota
+OTA_PID=/var/run/capsula-ota.pid
+
+start_ota() {
+    [ -x "$OTA_BIN" ] || return 0
+    if command -v start-stop-daemon >/dev/null 2>&1; then
+        start-stop-daemon -S -b -m -p "$OTA_PID" -x "$OTA_BIN" \
+            -- daemon >>/tmp/capsula-ota-boot.log 2>&1
+    fi
+}
+
+stop_ota() {
+    [ -f "$OTA_PID" ] || return 0
+    if command -v start-stop-daemon >/dev/null 2>&1; then
+        start-stop-daemon -K -p "$OTA_PID" -x "$OTA_BIN" >/dev/null 2>&1
+    fi
+    rm -f "$OTA_PID" 2>/dev/null
+}
+
+case "$1" in
+    start)
+        hostname alice 2>/dev/null
+        echo alice > /etc/hostname 2>/dev/null
+        killall -9 avahi-daemon 2>/dev/null
+        $DAEMON --no-drop-root -D
+        # Boot trigger for the Alice stack. avahi starts early and is sourced
+        # by rcS, unlike the later S99 scripts which were skipped on this build.
+        if ! pgrep -a capsula-alice >/dev/null 2>&1; then
+            nohup /usr/bin/capsula-alice-launcher.sh >/tmp/capsula-alice-launcher.log 2>&1 &
+        fi
+        # OTA runs on its own, independently of Alice/PulseAudio.
+        start_ota
+        ;;
+    stop)
+        killall -9 avahi-daemon 2>/dev/null
+        stop_ota
+        ;;
+    restart)
+        $0 stop
+        sleep 1
+        $0 start
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}" >&2
+        exit 1
+        ;;
+esac
