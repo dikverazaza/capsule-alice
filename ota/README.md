@@ -37,11 +37,12 @@ Asset URLs must point to `https://raw.githubusercontent.com/dikverazaza/capsule-
 ```sh
 capsula-ota check        # default: download, verify, install if version differs
 capsula-ota force        # reinstall even if version matches
-capsula-ota status       # installed version, last result, recent log lines
+capsula-ota status       # installed version, last check, last result, recent log lines
 capsula-ota rollback     # restore newest backup
+capsula-ota daemon       # check every 600 s, standalone, independent of Alice
 ```
 
-Logs: `/tmp/capsula-ota.log`. State: `/data/ota/` (`current_version`, `last_result`, `restart_pending`, `work/`, `backup/`).
+Logs: `/tmp/capsula-ota.log` and persistent `/data/ota/ota.log`. State: `/data/ota/` (`current_version`, `last_result`, `last_check`, `restart_pending`, `backup/`). Each check runs as a separate child process, so a failed check cannot kill the daemon.
 
 Optional local configuration in `/etc/capsula-ota.conf`:
 
@@ -51,12 +52,13 @@ RESTART_SERVICES=1
 DEFER_RESTART_AT_NIGHT=1
 QUIET_START=23
 QUIET_END=7
+OTA_INTERVAL=600
 # CAPSULA_OTA_BASE_URL=https://example.com/ota
 # CAPSULA_OTA_MANIFEST_URL=https://example.com/custom/manifest.txt
 # CAPSULA_OTA_ASSET_PREFIX=https://example.com/ota/assets/
 ```
 
-`/etc/init.d/S98capsula-ota start` runs a background check 25 seconds after boot. It is safe to leave enabled.
+`/etc/init.d/S98capsula-ota start` launches the standalone daemon with `start-stop-daemon`. It is also started from `S50avahi-daemon`, which is definitely executed by `rcS` on this firmware; the shared PID file `/var/run/capsula-ota.pid` prevents duplicates. The daemon does not use the Alice launcher, PulseAudio, or any other service, so updates still arrive after a reboot or if Alice is dead.
 
 ## First-time bootstrap
 
