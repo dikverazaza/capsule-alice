@@ -1,0 +1,32 @@
+#!/bin/sh
+# /usr/bin/capsule-mic
+# CLI tool to control and check microphone on VK Capsule Mini
+
+FIFO="/tmp/mic.control"
+STATUS="/tmp/mic.status"
+
+case "$1" in
+    mute|off|1)
+        echo "mute" > "$FIFO" 2>/dev/null
+        echo "Microphone muted (red ring active)"
+        ;;
+    unmute|on|0)
+        echo "unmute" > "$FIFO" 2>/dev/null
+        echo "Microphone unmuted"
+        ;;
+    toggle)
+        echo "toggle" > "$FIFO" 2>/dev/null
+        echo "Microphone toggled"
+        ;;
+    status|"")
+        if [ -f "$STATUS" ] && [ "$(cat "$STATUS" 2>/dev/null)" = "1" ]; then
+            echo "MUTED (1)"
+        else
+            echo "ACTIVE (0)"
+        fi
+        ;;
+    *)
+        echo "Usage: $0 {mute|unmute|toggle|status}"
+        exit 1
+        ;;
+esac
