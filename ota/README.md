@@ -1,11 +1,13 @@
 # OTA updates for VK Capsule Mini
 
-Silent, checksum-verified updates over GitHub Releases. No token is stored on the capsule.
+Silent, checksum-verified updates from public GitHub raw files. No token is stored on the capsule.
+
+The capsule's BusyBox `wget` can reach `raw.githubusercontent.com` but cannot complete TLS to `api.github.com` or `github.com`, so both manifest and binaries are served from raw GitHub content pinned to the moving git tag `ota-latest`.
 
 ## How it works
 
-1. `/usr/bin/capsula-ota check` downloads `https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/manifest.txt`.
-2. The manifest lists version, destination path, release asset URL, SHA-256, size and mode for each file.
+1. `/usr/bin/capsula-ota check` downloads `https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/manifest.txt`.
+2. The manifest lists version, destination path, raw asset URL, SHA-256, size and mode for each file.
 3. Every asset is downloaded to `/data/ota/work`, then size and SHA-256 are checked **before** any installed file is touched.
 4. Existing files are copied to `/data/ota/backup/<old-version>`.
 5. New files are written as `<dest>.new`, `chmod`-ed, `sync`-ed and atomically `mv`-ed into place.
@@ -28,7 +30,7 @@ The updater only accepts a fixed whitelist of destinations:
 /etc/init.d/S98capsula-ota
 ```
 
-Asset URLs must point to `https://github.com/dikverazaza/capsule-alice/releases/download/...`.
+Asset URLs must point to `https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/...`.
 
 ## Device commands
 
@@ -49,7 +51,9 @@ RESTART_SERVICES=1
 DEFER_RESTART_AT_NIGHT=1
 QUIET_START=23
 QUIET_END=7
+# CAPSULA_OTA_BASE_URL=https://example.com/ota
 # CAPSULA_OTA_MANIFEST_URL=https://example.com/custom/manifest.txt
+# CAPSULA_OTA_ASSET_PREFIX=https://example.com/ota/assets/
 ```
 
 `/etc/init.d/S98capsula-ota start` runs a background check 25 seconds after boot. It is safe to leave enabled.
@@ -82,7 +86,26 @@ git commit -m "OTA release <version>"
 git push
 ```
 
-`publish_release.py` uses only Python's standard library. It creates the GitHub release if needed, removes stale assets with the same names, uploads all assets, and writes `ota/manifest.txt` plus `ota/manifest.json`.
+`publish_release.py` uses only Python's standard library. It writes `ota/manifest.txt` plus `ota/manifest.json`, and also mirrors the assets into a GitHub Release for archival. After the manifest and `ota/assets/` are committed, move the `ota-latest` tag to that commit:
+
+```sh
+GITHUB_TOKEN=... python - <<'PY'
+import json, os, urllib.request
+sha = "<commit-sha>"
+req = urllib.request.Request(
+    "https://api.github.com/repos/dikverazaza/capsule-alice/git/refs/tags/ota-latest",
+    data=json.dumps({"sha": sha}).encode(),
+    headers={
+        "Accept": "application/vnd.github+json",
+        "Authorization": "Bearer " + os.environ["GITHUB_TOKEN"],
+        "Content-Type": "application/json",
+        "User-Agent": "capsula-ota-publisher",
+    },
+    method="PATCH",
+)
+print(urllib.request.urlopen(req, timeout=60).read().decode()[:200])
+PY
+```
 
 ## Security notes
 
