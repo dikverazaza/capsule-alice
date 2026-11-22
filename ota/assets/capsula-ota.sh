@@ -364,7 +364,9 @@ acquire_daemon_lock() {
         # start-stop-daemon may have written our PID before the lock check.
         # Do not leave that stale PID behind when this duplicate exits.
         written_pid=$(cat "$OTA_PID_FILE" 2>/dev/null || printf '')
-        [ "$written_pid" = "$$" ] && rm -f "$OTA_PID_FILE" 2>/dev/null
+        if [ "$written_pid" = "$$" ]; then
+            printf '%s\n' "$old_pid" > "$OTA_PID_FILE" 2>/dev/null
+        fi
         log "OTA daemon already running (pid $old_pid)."
         return 1
     fi
@@ -401,6 +403,9 @@ do_daemon() {
     # Give Wi-Fi/DNS a moment after boot before the first attempt.
     sleep 20
     while true; do
+        # start-stop-daemon from a later init script may overwrite the PID
+        # file with a duplicate that immediately exits; keep it accurate.
+        printf '%s\n' "$$" > "$OTA_PID_FILE" 2>/dev/null
         if "$self" check >>"$LOG_FILE" 2>&1; then
             sleep "$OTA_INTERVAL"
         else
