@@ -1,11 +1,11 @@
 V|1
-VERSION|20261123.07
+VERSION|20261123.08
 FILE|/usr/bin/capsula-ota|capsula-ota.sh|https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/capsula-ota.sh|abe905153b69c1a3fc2bb0b37be1512bc13df940139cc114a336bc704cabc193|15319|755
 FILE|/etc/init.d/S98capsula-ota|S98capsula-ota|https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/S98capsula-ota|25b17776a06d6da0e704baff35f465beb373bd57a7a081c5f8c818ba541ba0e2|1213|755
 FILE|/etc/init.d/S50avahi-daemon|S50avahi-daemon|https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/S50avahi-daemon|3224e702b479895d761be78650de6b100f45ae44f619a7fa548fbf64ecb850eb|1433|755
-FILE|/usr/bin/capsula-alice|capsula-alice|https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/capsula-alice|0204e6aee09886b0a621303a73cdf8891bb8c6c08563b38b588fb8b76dc24b02|2216792|755
+FILE|/usr/bin/capsula-alice|capsula-alice|https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/capsula-alice|5ef40d88dca04d184afbc129aeb696cb4ca0cc3d798945068573061a744636b4|2218392|755
 FILE|/usr/bin/ring_daemon|ring_daemon|https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/ring_daemon|4b872060b9cac225fff013d34cf2f61bf3473e7b52fd574764bf47d669929bee|1773224|755
-FILE|/usr/bin/wakewordd|wakewordd|https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/wakewordd|10a7977843ab419322e281d278b1340015c2ed40e6263f18e83080bad67e482f|7899040|755
+FILE|/usr/bin/wakewordd|wakewordd|https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/wakewordd|b1cdc0635ce831309ce0535be8691d024a5fd6e48c2f6715f84729f30f4b7763|7899040|755
 FILE|/usr/bin/capsula-audio|capsula-audio|https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/capsula-audio|65c344a9f24116af4f610b7ec22675b5da9a75e1cb46706d6afec130925b4f71|2301824|755
 FILE|/usr/bin/capsula-yandex|capsula-yandex|https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/capsula-yandex|1dc741dafa4f7984bf052d754d60cdb168b2bb7287b8eed5198cd2e7863f5c25|2891088|755
 FILE|/usr/bin/capsula-alice-launcher.sh|capsula-alice-launcher.sh|https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/capsula-alice-launcher.sh|85fec880b6431008524b2e78ff887f8cbb2ce73853ce3c41fa37890a38b20952|2782|755
