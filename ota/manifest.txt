@@ -1,6 +1,6 @@
 V|1
-VERSION|20261123.04
-FILE|/usr/bin/capsula-ota|capsula-ota.sh|https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/capsula-ota.sh|c5c35703fb72b03cb9bdaa9d50117fea8ac25d8f6f547b12e562d8bdadd61a90|14242|755
+VERSION|20261123.05
+FILE|/usr/bin/capsula-ota|capsula-ota.sh|https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/capsula-ota.sh|4176c2da494e838c6417243d2c27e91b40efe5faca44cda419694398b719058b|15063|755
 FILE|/etc/init.d/S98capsula-ota|S98capsula-ota|https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/S98capsula-ota|25b17776a06d6da0e704baff35f465beb373bd57a7a081c5f8c818ba541ba0e2|1213|755
 FILE|/etc/init.d/S50avahi-daemon|S50avahi-daemon|https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/S50avahi-daemon|3224e702b479895d761be78650de6b100f45ae44f619a7fa548fbf64ecb850eb|1433|755
 FILE|/usr/bin/capsula-alice|capsula-alice|https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/capsula-alice|0204e6aee09886b0a621303a73cdf8891bb8c6c08563b38b588fb8b76dc24b02|2216792|755
