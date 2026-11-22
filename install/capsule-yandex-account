@@ -1,0 +1,98 @@
+#!/bin/sh
+# /usr/bin/capsule-yandex-account
+# CLI tool for checking, logging into, and resetting Yandex Account on VK Capsule
+
+CLIENT_ID="23cabbbdc6cd418abb4b39c32c41195d"
+CLIENT_SECRET="53bc75238f0c4d08a118e51fe9203300"
+
+usage() {
+    echo "Использование: $0 {status|login|reset}"
+    echo "  status - Показать текущий аккаунт Яндекса"
+    echo "  login  - Привязать/сменить аккаунт через ya.ru/device"
+    echo "  reset  - Отвязать текущий аккаунт"
+    exit 1
+}
+
+case "$1" in
+    status)
+        if [ -f /etc/alice/yandex_credentials.json ]; then
+            echo "Аккаунт привязан:"
+            cat /etc/alice/yandex_credentials.json | grep -o '"first_name": *"[^"]*"' || echo "токен активен"
+        elif [ -f /data/capsula-yandex/credentials.json ]; then
+            echo "Аккаунт привязан (в /data):"
+            cat /data/capsula-yandex/credentials.json | grep -o '"first_name": *"[^"]*"' || echo "токен активен"
+        else
+            echo "Аккаунт Яндекса не привязан."
+        fi
+        ;;
+    reset)
+        echo "Отвязка аккаунта Яндекса..."
+        rm -f /etc/alice/yandex_credentials.json /data/capsula-yandex/credentials.json /root/.capsula-mini/yandex_credentials.json /tmp/yandex_credentials.json /tmp/capsula-yandex-player-state.json
+        killall -9 capsula-alice capsula-yandex 2>/dev/null
+        echo "off" > /tmp/ring.fifo 2>/dev/null
+        echo "Аккаунт успешно отвязан."
+        ;;
+    login)
+        echo "Запрос кода устройства в Яндексе..."
+        RESP=$(wget -q -O - --post-data "client_id=$CLIENT_ID&device_name=CapsuleMiniAlice" https://oauth.yandex.ru/device/code)
+        USER_CODE=$(echo "$RESP" | grep -o '"user_code":"[^"]*"' | cut -d'"' -f4)
+        DEV_CODE=$(echo "$RESP" | grep -o '"device_code":"[^"]*"' | cut -d'"' -f4)
+        INTERVAL=$(echo "$RESP" | grep -o '"interval":[0-9]*' | cut -d':' -f2)
+        [ -z "$INTERVAL" ] && INTERVAL=5
+
+        if [ -z "$USER_CODE" ] || [ -z "$DEV_CODE" ]; then
+            echo "Ошибка получения кода: $RESP"
+            exit 1
+        fi
+
+        echo ""
+        echo "=========================================================="
+        echo "1. Откройте страницу: https://ya.ru/device"
+        echo "2. Введите код:       $USER_CODE"
+        echo "3. Войдите в нужный аккаунт Яндекса и нажмите Разрешить"
+        echo "=========================================================="
+        echo ""
+        echo "Ожидание подтверждения..."
+
+        while true; do
+            sleep $INTERVAL
+            TOKEN_RESP=$(wget -q -O - --post-data "grant_type=device_code&code=$DEV_CODE&client_id=$CLIENT_ID&client_secret=$CLIENT_SECRET" https://oauth.yandex.ru/token)
+            ACCESS_TOKEN=$(echo "$TOKEN_RESP" | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
+            REFRESH_TOKEN=$(echo "$TOKEN_RESP" | grep -o '"refresh_token":"[^"]*"' | cut -d'"' -f4)
+
+            if [ -n "$ACCESS_TOKEN" ]; then
+                echo "Авторизация подтверждена!"
+                USER_RESP=$(wget -q -O - --header "Authorization: OAuth $ACCESS_TOKEN" "https://login.yandex.ru/info?format=json")
+                USER_NAME=$(echo "$USER_RESP" | grep -o '"first_name":"[^"]*"' | cut -d'"' -f4)
+                [ -z "$USER_NAME" ] && USER_NAME=$(echo "$USER_RESP" | grep -o '"display_name":"[^"]*"' | cut -d'"' -f4)
+                [ -z "$USER_NAME" ] && USER_NAME="Пользователь"
+
+                echo "Пользователь: $USER_NAME"
+
+                mkdir -p /etc/alice /data/capsula-yandex /root/.capsula-mini
+                JSON="{\"access_token\":\"$ACCESS_TOKEN\",\"refresh_token\":\"$REFRESH_TOKEN\",\"first_name\":\"$USER_NAME\",\"expires_in\":31536000}"
+                echo "$JSON" > /etc/alice/yandex_credentials.json
+                echo "$JSON" > /data/capsula-yandex/credentials.json
+                echo "$JSON" > /root/.capsula-mini/yandex_credentials.json
+                chmod 600 /etc/alice/yandex_credentials.json /data/capsula-yandex/credentials.json /root/.capsula-mini/yandex_credentials.json
+
+                rm -f /tmp/capsula-yandex-player-state.json
+                killall -9 capsula-alice capsula-yandex 2>/dev/null
+                sleep 1
+                /usr/bin/capsula-yandex > /tmp/capsula-yandex.log 2>&1 &
+                /etc/init.d/S99capsula-alice start >/dev/null 2>&1 &
+                echo "Сервисы Алисы и Яндекс Музыки успешно перезапущены с новым аккаунтом!"
+                exit 0
+            fi
+
+            ERR=$(echo "$TOKEN_RESP" | grep -o '"error":"[^"]*"' | cut -d'"' -f4)
+            if [ "$ERR" != "authorization_pending" ] && [ -n "$ERR" ]; then
+                echo "Ошибка авторизации: $TOKEN_RESP"
+                exit 1
+            fi
+        done
+        ;;
+    *)
+        usage
+        ;;
+esac
