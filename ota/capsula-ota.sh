@@ -8,15 +8,16 @@
 #   status    print current/manifest version and last result
 #   rollback  restore the newest local backup
 #
-# No token is stored on the device. Assets are public GitHub release files.
+# No token is stored on the device. Manifest and assets are public raw files
+# pinned to the moving git tag "ota-latest", which avoids CDN staleness.
 # BusyBox wget does not validate TLS certificates, so every asset is verified
 # against SHA-256 + size values from the manifest before any file is replaced.
 
 set -u
 
-OTA_BASE_URL="${CAPSULA_OTA_BASE_URL:-https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota}"
+OTA_BASE_URL="${CAPSULA_OTA_BASE_URL:-https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota}"
 MANIFEST_URL="${CAPSULA_OTA_MANIFEST_URL:-$OTA_BASE_URL/manifest.txt}"
-RELEASE_PREFIX="${CAPSULA_OTA_RELEASE_PREFIX:-https://github.com/dikverazaza/capsule-alice/releases/download/}"
+ASSET_PREFIX="${CAPSULA_OTA_ASSET_PREFIX:-https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/}"
 
 OTA_HOME="${CAPSULA_OTA_HOME:-/data/ota}"
 WORK="$OTA_HOME/work"
@@ -213,8 +214,8 @@ parse_manifest() {
             ''|*[!A-Za-z0-9._-]*) die "invalid asset name: $asset" ;;
         esac
         case "$url" in
-            "$RELEASE_PREFIX"*) ;;
-            *) die "asset URL is not an allowed GitHub release URL: $url" ;;
+            "$ASSET_PREFIX"*) ;;
+            *) die "asset URL is not an allowed raw asset URL: $url" ;;
         esac
         case "$sha" in
             ????????????????????????????????????????????????????????????????) ;;
