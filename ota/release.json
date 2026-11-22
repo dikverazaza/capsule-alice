@@ -1,9 +1,9 @@
 {
-  "tag": "v20261123.04",
-  "version": "20261123.04",
-  "name": "Capsule Alice OTA 2026-11-23.04",
+  "tag": "v20261123.05",
+  "version": "20261123.05",
+  "name": "Capsule Alice OTA 2026-11-23.05",
   "asset_url_base": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets",
-  "body": "Single robust OTA daemon.\n\n- daemon lock prevents duplicates when S98 and S50 race at boot\n- failed network check retries after 60 s, then returns to the 10 minute interval\n- waits 20 s after boot for Wi-Fi/DNS\n- status shows daemon PID\n- includes v20261123.03 periodic OTA and v20261123.02 ring fixes",
+  "body": "Ignore stale manifests and clean duplicate PID files.\n\n- version comparison uses sort -V; an older manifest cannot downgrade a capsule\n- duplicate daemon removes the stale PID file before exiting\n- includes v20261123.04 single-daemon lock and v20261123.03 periodic OTA",
   "files": [
     {
       "dest": "/usr/bin/capsula-ota",
