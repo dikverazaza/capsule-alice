@@ -1,9 +1,9 @@
 {
-  "tag": "v20261123.06",
-  "version": "20261123.06",
-  "name": "Capsule Alice OTA 2026-11-23.06",
+  "tag": "v20261123.07",
+  "version": "20261123.07",
+  "name": "Capsule Alice OTA 2026-11-23.07",
   "asset_url_base": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets",
-  "body": "Keep the active OTA daemon PID accurate.\n\n- duplicate daemon restores the active PID instead of clearing the file\n- running daemon rewrites its PID every check cycle\n- includes stale-manifest protection, single-daemon lock and 10 minute checks",
+  "body": "Lower wake word sensitivity threshold.\n\n- activation threshold 0.40 -> 0.34\n- sustained threshold 0.35 -> 0.30\n- printed threshold updated accordingly\n- includes all periodic OTA and ring/barge-in fixes",
   "files": [
     {
       "dest": "/usr/bin/capsula-ota",
