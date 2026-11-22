@@ -1,0 +1,33 @@
+#!/bin/sh
+# /etc/init.d/S98capsula-ota
+# Boot-time OTA check. Runs in the background after the network is expected
+# to be up and never plays audio or changes mute state by itself.
+
+OTA_BIN=/usr/bin/capsula-ota
+OTA_HOME=/data/ota
+
+case "${1:-}" in
+  start)
+    [ -x "$OTA_BIN" ] || exit 0
+    mkdir -p "$OTA_HOME"
+    nohup sh -c 'sleep 25; /usr/bin/capsula-ota check' \
+      >/tmp/capsula-ota-boot.log 2>&1 &
+    ;;
+  stop)
+    if [ -f "$OTA_HOME/.lock/pid" ]; then
+      pid=$(cat "$OTA_HOME/.lock/pid" 2>/dev/null || printf '')
+      [ -n "$pid" ] && kill "$pid" 2>/dev/null
+    fi
+    ;;
+  restart)
+    "$0" stop
+    "$0" start
+    ;;
+  status)
+    [ -x "$OTA_BIN" ] && "$OTA_BIN" status
+    ;;
+  *)
+    printf 'Usage: %s {start|stop|restart|status}\n' "$0" >&2
+    exit 1
+    ;;
+esac
