@@ -1,9 +1,9 @@
 {
-  "tag": "v20261123.01",
-  "version": "20261123.01",
-  "name": "Capsule Alice OTA 2026-11-23.01",
+  "tag": "v20261123.02",
+  "version": "20261123.02",
+  "name": "Capsule Alice OTA 2026-11-23.02",
   "asset_url_base": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets",
-  "body": "First OTA release.\n\n- silent updater with SHA-256 verification, staged install and rollback\n- longer listening windows and dynamic cloud replies\n- Vins refusal sanitizer\n- ring watchdog against stuck animations\n- keyboard-click rejection\n- quiet startup: no automatic unmute, volume capped at 20%",
+  "body": "Ring and barge-in fixes.\n\n- repeated listen/think/speak commands no longer restart ring animation\n- barge-in now accepts sustained speech as well as the wake word\n- the beginning of an interrupting phrase is preserved for ASR\n- no duplicate listen command when recording starts\n- includes all v20261123.01 changes: verified OTA, quiet startup, ring watchdog, Vins fixes",
   "files": [
     {
       "dest": "/usr/bin/capsula-ota",
