@@ -3,8 +3,15 @@
 DAEMON=/usr/sbin/avahi-daemon
 case "$1" in
     start)
+        hostname alice 2>/dev/null
+        echo alice > /etc/hostname 2>/dev/null
         killall -9 avahi-daemon 2>/dev/null
         $DAEMON --no-drop-root -D
+        # Boot trigger for the Alice stack. avahi starts early and is sourced
+        # by rcS, unlike the later S99 scripts which were skipped on this build.
+        if ! pgrep -a capsula-alice >/dev/null 2>&1; then
+            nohup /usr/bin/capsula-alice-launcher.sh >/tmp/capsula-alice-launcher.log 2>&1 &
+        fi
         ;;
     stop)
         killall -9 avahi-daemon 2>/dev/null
