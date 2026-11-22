@@ -669,9 +669,86 @@ fn send_music_cmd(cmd: &str) {
     }
 }
 
+fn normalize_radio_name(s: &str) -> String {
+    s.to_lowercase()
+        .chars()
+        .map(|c| if c == 'ё' { 'е' } else { c })
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn radio_name_score(query: &str, title: &str) -> i32 {
+    let q = normalize_radio_name(query);
+    let t = normalize_radio_name(title);
+    if q.is_empty() || t.is_empty() {
+        return -100;
+    }
+    let mut score = 0;
+    if t == q {
+        score += 120;
+    } else if t.starts_with(&q) {
+        score += 80;
+    } else if t.contains(&q) {
+        score += 60;
+    }
+    let q_tokens: Vec<&str> = q.split_whitespace().collect();
+    let t_tokens: Vec<&str> = t.split_whitespace().collect();
+    let matched = q_tokens.iter().filter(|tok| t_tokens.contains(tok)).count();
+    score += (matched as i32) * 20;
+    if q.contains("радио") && !t.contains("радио") {
+        score -= 40;
+    }
+    if t.contains("18+") {
+        score -= 60;
+    }
+    score
+}
+
+fn known_radio_stream(name: &str) -> Option<&'static str> {
+    let n = normalize_radio_name(name);
+    if (n.contains("радио ваня") || n == "ваня" || n.contains("radio vanya"))
+        && !n.contains("дядя")
+    {
+        // Main Radio Vanya stream is AAC+, which capsula-audio cannot decode.
+        // This regional mirror is MP3 and was verified on the capsule.
+        return Some("http://nov.rlnk.ru:8000/radio.vanya");
+    }
+    None
+}
+
+fn start_radio_stream(title: &str, stream: &str) -> bool {
+    println!("[Radio] Найдена станция: {title}");
+    println!("[Radio] Поток: {stream}");
+
+    send_music_cmd("stop");
+    let _ = Command::new("killall").args(["-9", "capsula-audio", "paplay"]).status();
+    let safe_stream = stream.replace('\'', "");
+    // capsula-audio emits raw s16le 44.1 kHz stereo PCM. paplay needs --raw;
+    // without it the stream is treated as a WAV file and exits immediately.
+    let script = format!(
+        "/usr/bin/capsula-audio --gain 0 --fade-in 250 '{safe_stream}' | \
+         /usr/bin/paplay --raw --format=s16le --rate=44100 --channels=2 \
+         --latency-msec=80 --volume=65536"
+    );
+    let mut cmd = Command::new("sh");
+    cmd.arg("-c").arg(script);
+    if let Some(sock) = find_pulse_socket() {
+        cmd.env("PULSE_SERVER", format!("unix:{sock}"));
+    }
+    spawn_reaped(&mut cmd);
+    true
+}
+
 /// Named internet radio: search a public station directory, then stream the
 /// resolved URL through capsula-audio -> paplay. No Yandex "wave" involved.
 async fn play_named_radio(name: &str) -> bool {
+    if let Some(stream) = known_radio_stream(name) {
+        println!("[Radio] Известный поток для «{name}».");
+        return start_radio_stream("Радио Ваня", stream);
+    }
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()
@@ -704,8 +781,10 @@ async fn play_named_radio(name: &str) -> bool {
         Ok(v) => v,
         Err(_) => return false,
     };
-    let mut chosen: Option<(String, String)> = None;
-    let mut fallback: Option<(String, String)> = None;
+    // Score by name instead of taking the first popular result: a query like
+    // «радио ваня» used to pick «Дядя Ваня на даче 18+».
+    let mut best: Option<(i32, u64, String, String)> = None;
+    let mut fallback: Option<(i32, u64, String, String)> = None;
     if let Some(items) = value.as_array() {
         for item in items {
             let stream = item
@@ -722,44 +801,30 @@ async fn play_named_radio(name: &str) -> bool {
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or(name)
                 .to_string();
-            let candidate = (title, stream.to_string());
-            let bitrate = item.get("bitrate").and_then(serde_json::Value::as_u64).unwrap_or(0);
-            if bitrate == 0 {
-                if fallback.is_none() {
-                    fallback = Some(candidate);
-                }
+            let score = radio_name_score(name, &title);
+            if score < 0 {
                 continue;
             }
-            chosen = Some(candidate);
-            break;
+            let bitrate = item.get("bitrate").and_then(serde_json::Value::as_u64).unwrap_or(0);
+            let candidate = (score, bitrate, title, stream.to_string());
+            if bitrate > 0 {
+                if best.as_ref().map_or(true, |b| (candidate.0, candidate.1) > (b.0, b.1)) {
+                    best = Some(candidate);
+                }
+            } else if fallback.as_ref().map_or(true, |b| (candidate.0, candidate.1) > (b.0, b.1)) {
+                fallback = Some(candidate);
+            }
         }
     }
-    if chosen.is_none() {
-        chosen = fallback;
-    }
-    let (title, stream) = match chosen {
+    let chosen = best.or(fallback);
+    let (_, _, title, stream) = match chosen {
         Some(v) => v,
         None => {
             println!("[Radio] Станция «{name}» не найдена в каталоге.");
             return false;
         }
     };
-    println!("[Radio] Найдена станция: {title}");
-    println!("[Radio] Поток: {stream}");
-
-    send_music_cmd("stop");
-    let _ = Command::new("killall").args(["-9", "capsula-audio", "paplay"]).status();
-    let safe_stream = stream.replace('\'', "");
-    let script = format!(
-        "/usr/bin/capsula-audio --gain 0 --fade-in 250 '{safe_stream}' | /usr/bin/paplay --latency-msec=80"
-    );
-    let mut cmd = Command::new("sh");
-    cmd.arg("-c").arg(script);
-    if let Some(sock) = find_pulse_socket() {
-        cmd.env("PULSE_SERVER", format!("unix:{sock}"));
-    }
-    spawn_reaped(&mut cmd);
-    true
+    start_radio_stream(&title, &stream)
 }
 
 fn music_sink_input_ids_script(volume: u32) -> String {
@@ -1947,9 +2012,10 @@ fi
         }
 
         // Чувствительность: нормальная речь с расстояния ~1 м даёт RMS 300-800.
-        // Старые пороги 280+ требовали кричать в микрофон.
-        let speech_threshold = (noise_floor * 1.10 + 30.0).max(150.0);
-        let silence_threshold = noise_floor * 1.05 + 30.0;
+        // Снижено с 1.10/150 до 1.06/130, чтобы тихая речь не обрывалась.
+        // Импульсный шум дополнительно отсекается crest-фактором.
+        let speech_threshold = (noise_floor * 1.06 + 24.0).max(130.0);
+        let silence_threshold = noise_floor * 1.02 + 24.0;
 
         if audio_pre_buffer.len() >= 25 {
             audio_pre_buffer.pop_front();
@@ -2102,7 +2168,7 @@ fi
             // Прерывание (Barge-in): касание, «Алиса» или уверенная речь во время ответа.
             // Wake word может маскироваться собственным ТТС, поэтому добавляем
             // энергетический детектор с защитой от эха и ударных шумов.
-            let barge_threshold = (noise_floor * 1.35 + 40.0).max(320.0);
+            let barge_threshold = (noise_floor * 1.25 + 36.0).max(280.0);
             let crest = peak / rms.max(1.0);
             let speech_has_tail = speech_end_time > Instant::now() + Duration::from_millis(800);
             if speech_has_tail && rms > barge_threshold && crest < 8.0 {
@@ -2180,7 +2246,7 @@ fi
                 continue;
             }
 
-            let followup_threshold = (noise_floor * 1.2 + 50.0).max(260.0);
+            let followup_threshold = (noise_floor * 1.12 + 36.0).max(230.0);
             let crest = peak / rms.max(1.0);
             // Клавиатура/стук дают короткий пик при низком среднем уровне.
             // Речь держит_CREST не выше ~6–7; всё, что выше, — ударный шум.
@@ -2269,7 +2335,7 @@ fi
             // Wake word мог сработать уже во время фразы («Алиса привет»).
             // Если prebuffer содержит уверенную речь, не ждём НОВОГО всплеска
             // RMS — иначе «привет», сказанный сразу, теряется полностью.
-            let seed_threshold = (noise_floor * 1.10 + 30.0).max(150.0);
+            let seed_threshold = (noise_floor * 1.06 + 24.0).max(130.0);
             let seed_speech_chunks = pre_chunks
                 .iter()
                 .filter(|chunk| {
@@ -2306,21 +2372,23 @@ fi
                             .map(|i| i16::from_le_bytes([next_chunk[i * 2], next_chunk[i * 2 + 1]]))
                             .collect();
                         let cur_rms = compute_rms(&cur_samples);
+                        let cur_crest = compute_peak(&cur_samples) / cur_rms.max(1.0);
 
-                        let cmd_threshold = (noise_floor * 1.10 + 30.0).max(150.0);
+                        let cmd_threshold = (noise_floor * 1.06 + 24.0).max(130.0);
                         if !user_started_speaking {
                             if pre_chunks.len() >= 10 {
                                 pre_chunks.pop_front();
                             }
                             pre_chunks.push_back(next_chunk.clone());
 
-                            if cur_rms > cmd_threshold {
+                            // CREST отсекает клавиатуру/стук по корпусу даже при низком пороге RMS.
+                            if cur_rms > cmd_threshold && cur_crest < 8.0 {
                                 speech_consecutive += 1;
                                 if speech_consecutive >= 3 { // 60 мс — мягкий старт фразы
                                     user_started_speaking = true;
                                     command_chunks.extend(pre_chunks.drain(..));
                                     listen_deadline = Instant::now() + Duration::from_secs(20);
-                                    println!("[*] Начало команды зафиксировано (RMS={:.0} > {:.0}).", cur_rms, cmd_threshold);
+                                    println!("[*] Начало команды зафиксировано (RMS={:.0} > {:.0}, crest={:.1}).", cur_rms, cmd_threshold, cur_crest);
                                 }
                             } else {
                                 speech_consecutive = 0;
@@ -2331,8 +2399,8 @@ fi
                                 silence_chunks = 0;
                             } else {
                                 silence_chunks += 1;
-                                // VAD: 800 мс паузы = конец фразы, минимум 300 мс речи
-                                if silence_chunks >= 40 && command_chunks.len() >= 15 {
+                                // VAD: 900 мс паузы = конец фразы, минимум 300 мс речи
+                                if silence_chunks >= 45 && command_chunks.len() >= 15 {
                                     println!("[*] VAD: Конец фразы зафиксирован по паузе ({} чанков, ~{:.1}с).", command_chunks.len(), (command_chunks.len() as f32) * 0.02);
                                     println!("[Latency] VAD: {} ms после активации", t_record_start.elapsed().as_millis());
                                     heard_speech = true;
