@@ -245,20 +245,33 @@ int main(int argc, char **argv) {
                             clear_ring();
                         }
                     } else if (strncmp(line, "wake", 4) == 0) {
-                        current_ring_state = RING_WAKE;
-                        step = 0;
+                        if (current_ring_state != RING_WAKE) {
+                            current_ring_state = RING_WAKE;
+                            step = 0;
+                        }
                     } else if (strncmp(line, "listen", 6) == 0) {
-                        current_ring_state = RING_LISTEN;
-                        step = 0;
+                        // Повторные команды от wakewordd и Алисы не должны
+                        // сбрасывать анимацию на первый кадр.
+                        if (current_ring_state != RING_LISTEN) {
+                            current_ring_state = RING_LISTEN;
+                            step = 0;
+                        }
                     } else if (strncmp(line, "think", 5) == 0) {
-                        current_ring_state = RING_THINK;
-                        step = 0;
+                        if (current_ring_state != RING_THINK) {
+                            current_ring_state = RING_THINK;
+                            step = 0;
+                        }
                     } else if (strncmp(line, "speak", 5) == 0) {
-                        current_ring_state = RING_SPEAK;
-                        step = 0;
+                        if (current_ring_state != RING_SPEAK) {
+                            current_ring_state = RING_SPEAK;
+                            step = 0;
+                        }
                     } else if (strncmp(line, "music", 5) == 0) {
-                        current_ring_state = (g_night_active) ? RING_NIGHT : RING_MUSIC;
-                        step = 0;
+                        enum RingState music_state = (g_night_active) ? RING_NIGHT : RING_MUSIC;
+                        if (current_ring_state != music_state) {
+                            current_ring_state = music_state;
+                            step = 0;
+                        }
                     } else if (strncmp(line, "mute", 4) == 0) {
                         g_mic_muted = 1;
                         current_ring_state = RING_MUTE;
@@ -269,8 +282,10 @@ int main(int argc, char **argv) {
                         step = 0;
                         if (!g_night_active) clear_ring();
                     } else if (strncmp(line, "alert", 5) == 0) {
-                        current_ring_state = RING_ALERT;
-                        step = 0;
+                        if (current_ring_state != RING_ALERT) {
+                            current_ring_state = RING_ALERT;
+                            step = 0;
+                        }
                     }
                     // --- NIGHTLIGHT COMMANDS ---
                     else if (strncmp(line, "night_on", 8) == 0) {
