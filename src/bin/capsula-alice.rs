@@ -851,18 +851,37 @@ done
 "#)
 }
 
+// Music stream volume is applied by one background thread instead of many
+// one-shot shells. This lets Alice pre-duck music as soon as the user starts
+// speaking, before the local wake-word spotter has to compete with the speaker.
+static MUSIC_STREAM_VOLUME: AtomicU32 = AtomicU32::new(65536);
+const MUSIC_VOLUME_NORMAL: u32 = 65536; // 100%
+const MUSIC_VOLUME_PREDUCK: u32 = 16384; // 25%, while the user may be talking
+const MUSIC_VOLUME_LISTEN: u32 = 6554; // 10%, while recording a command
+
+fn spawn_music_volume_applier() {
+    std::thread::spawn(|| loop {
+        let volume = MUSIC_STREAM_VOLUME.load(Ordering::SeqCst);
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg(music_sink_input_ids_script(volume));
+        let _ = cmd.status();
+        std::thread::sleep(Duration::from_millis(600));
+    });
+}
+
 fn duck_music() {
     // While listening, music drops to 10% of its own stream volume.
-    let mut cmd = Command::new("sh");
-    cmd.arg("-c").arg(music_sink_input_ids_script(6554));
-    spawn_reaped(&mut cmd);
+    MUSIC_STREAM_VOLUME.store(MUSIC_VOLUME_LISTEN, Ordering::SeqCst);
+}
+
+fn predduck_music() {
+    // Speech may precede the wake-word decision; lower music before that.
+    MUSIC_STREAM_VOLUME.store(MUSIC_VOLUME_PREDUCK, Ordering::SeqCst);
 }
 
 fn unduck_music() {
     // Restore full stream volume after command/speech.
-    let mut cmd = Command::new("sh");
-    cmd.arg("-c").arg(music_sink_input_ids_script(65536));
-    spawn_reaped(&mut cmd);
+    MUSIC_STREAM_VOLUME.store(MUSIC_VOLUME_NORMAL, Ordering::SeqCst);
 }
 
 // ---------------------------------------------------------------------------
@@ -1927,12 +1946,17 @@ fi
     });
 
     println!("[Daemon] Голосовой сервис активен. Слушаю «Алиса» или касание панели!\n");
+    spawn_music_volume_applier();
 
     // 25 чанков = 500 мс: «Алиса привет» не должен терять начало «привет».
     let mut audio_pre_buffer: VecDeque<Vec<u8>> = VecDeque::with_capacity(25);
     // Аудио до детекции wake word: «Алиса привет» должно не терять «привет».
     let mut pending_seed: Vec<Vec<u8>> = Vec::new();
     let mut noise_floor = 120.0f32;
+    // Music is pre-ducked as soon as the user starts talking, so the wake-word
+    // spotter is not competing with a speaker at full level.
+    let mut music_preducked = false;
+    let mut last_music_speech = Instant::now();
     let mut state = "WAITING_WAKEWORD";
     let mut followup_deadline = Instant::now();
     // Защита от эха собственного ответа в первые мгновения окна продолжения.
@@ -2016,6 +2040,24 @@ fi
         // Импульсный шум дополнительно отсекается crest-фактором.
         let speech_threshold = (noise_floor * 1.06 + 24.0).max(130.0);
         let silence_threshold = noise_floor * 1.02 + 24.0;
+
+        // Pre-duck music while the user may be talking. The spotter runs in a
+        // separate process, so waiting for a wake-word detection is too late.
+        let current_crest = peak / rms.max(1.0);
+        if state == "WAITING_WAKEWORD" && !MIC_MUTED.load(Ordering::SeqCst) {
+            if rms > speech_threshold && current_crest < 8.0 {
+                if !music_preducked {
+                    predduck_music();
+                    music_preducked = true;
+                    println!("[Audio] Музыка приглушена до 25% на время речи.");
+                }
+                last_music_speech = Instant::now();
+            } else if music_preducked && last_music_speech.elapsed() >= Duration::from_secs(3) {
+                unduck_music();
+                music_preducked = false;
+                println!("[Audio] Музыка возвращена на 100%.");
+            }
+        }
 
         if audio_pre_buffer.len() >= 25 {
             audio_pre_buffer.pop_front();
@@ -2188,6 +2230,7 @@ fi
                 }
                 stop_speech();
                 play_chime();
+                duck_music();
                 set_alice_busy(true);
                 set_ring("listen");
                 listen_deadline = Instant::now() + COMMAND_LISTEN_WINDOW;
@@ -2232,6 +2275,7 @@ fi
             if activated {
                 followup_speech_chunks = 0;
                 println!("[!] Активация продолжения диалога по триггеру «Алиса» / сенсору!");
+                duck_music();
                 set_alice_busy(true);
                 set_ring("listen");
                 pending_seed = audio_pre_buffer.iter().cloned().collect();
@@ -2255,6 +2299,7 @@ fi
                 if followup_speech_chunks >= 6 {
                     followup_speech_chunks = 0;
                     println!("[!] Продолжение диалога: уверенная речь (RMS={:.0} > {:.0}, crest={:.1}).", rms, followup_threshold, crest);
+                    duck_music();
                     set_alice_busy(true);
                     set_ring("listen");
                     pending_seed = audio_pre_buffer.iter().cloned().collect();
@@ -2292,6 +2337,7 @@ fi
                 set_alice_busy(true);
                 let _ = std::fs::write(WAKE_TRIGGER_FILE, "");
                 duck_music();
+                music_preducked = false;
                 set_ring("listen");
                 // Сохраняем preacher-чанки и НЕ выбрасываем уже пришедший PCM:
                 // иначе «Алиса привет» теряет вторую часть фразы.
