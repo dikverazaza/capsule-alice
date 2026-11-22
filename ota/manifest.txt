@@ -1,0 +1,10 @@
+V|1
+VERSION|20261123.01
+FILE|/usr/bin/capsula-ota|capsula-ota.sh|https://github.com/dikverazaza/capsule-alice/releases/download/v20261123.01/capsula-ota.sh|3191cdad2655542e1a9396a8847ca0ddc9d73725fad6cf8b9c890bbd08157327|10935|755
+FILE|/etc/init.d/S98capsula-ota|S98capsula-ota|https://github.com/dikverazaza/capsule-alice/releases/download/v20261123.01/S98capsula-ota|629534dc99885a0cb9d00633120b87a75ea5e68b99aef50bad0249fd78b25932|790|755
+FILE|/usr/bin/capsula-alice|capsula-alice|https://github.com/dikverazaza/capsule-alice/releases/download/v20261123.01/capsula-alice|9ee280ae508306a6cf8b85014d5c01b61532822eb15a0fc99714a453ad3de3b7|2214872|755
+FILE|/usr/bin/ring_daemon|ring_daemon|https://github.com/dikverazaza/capsule-alice/releases/download/v20261123.01/ring_daemon|1eced2e49df001e74e974a2f76a0175d9376cb2c212858e918a2b8578b6e8437|1773152|755
+FILE|/usr/bin/wakewordd|wakewordd|https://github.com/dikverazaza/capsule-alice/releases/download/v20261123.01/wakewordd|453eed50ff4423e289e73a785365459902d81f0e3e5917dce6a390eb3165cfad|7899040|755
+FILE|/usr/bin/capsula-audio|capsula-audio|https://github.com/dikverazaza/capsule-alice/releases/download/v20261123.01/capsula-audio|65c344a9f24116af4f610b7ec22675b5da9a75e1cb46706d6afec130925b4f71|2301824|755
+FILE|/usr/bin/capsula-yandex|capsula-yandex|https://github.com/dikverazaza/capsule-alice/releases/download/v20261123.01/capsula-yandex|1dc741dafa4f7984bf052d754d60cdb168b2bb7287b8eed5198cd2e7863f5c25|2891088|755
+FILE|/usr/bin/capsula-alice-launcher.sh|capsula-alice-launcher.sh|https://github.com/dikverazaza/capsule-alice/releases/download/v20261123.01/capsula-alice-launcher.sh|85fec880b6431008524b2e78ff887f8cbb2ce73853ce3c41fa37890a38b20952|2782|755
