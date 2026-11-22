@@ -1,6 +1,6 @@
 {
-  "version": "20261123.06",
-  "tag": "v20261123.06",
+  "version": "20261123.07",
+  "tag": "v20261123.07",
   "files": [
     {
       "dest": "/usr/bin/capsula-ota",
@@ -46,7 +46,7 @@
       "dest": "/usr/bin/wakewordd",
       "asset": "wakewordd",
       "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/wakewordd",
-      "sha256": "453eed50ff4423e289e73a785365459902d81f0e3e5917dce6a390eb3165cfad",
+      "sha256": "10a7977843ab419322e281d278b1340015c2ed40e6263f18e83080bad67e482f",
       "size": 7899040,
       "mode": "755"
     },
