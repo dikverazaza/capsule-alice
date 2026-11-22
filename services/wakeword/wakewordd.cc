@@ -26,7 +26,7 @@
 #define RING_FIFO "/tmp/ring.fifo"
 #define TRIGGER_FILE "/tmp/wakeword.trigger"
 #define ALICE_BUSY_FILE "/tmp/alice_busy"
-#define ACTIVATION_THRESHOLD 0.670f // Calibrated: noise <0.12, Boris false spikes 0.55-0.66, genuine Alice 0.70-0.95+
+#define ACTIVATION_THRESHOLD 0.460f // Тишина <0.15, слабая «Алиса» ~0.45; ложные режутся 3 уверенными фреймами
 #define PREAMP_GAIN 7.0f            // Matches Capsule Mini Speex mic level to model expectation
 
 static std::string get_parec_cmd() {
@@ -224,6 +224,7 @@ int main(int argc, char **argv) {
 
     printf("[wakewordd] Запуск оффлайн-детектора Алисы (TFLite Micro)...\n");
     printf("[wakewordd] Загрузка модели из: %s\n", model_path);
+    printf("[wakewordd] Порог: %.3f, подтверждений: 3, cooldown: 2 c\n", ACTIVATION_THRESHOLD);
     fflush(stdout);
 
     FILE *mf = fopen(model_path, "rb");
