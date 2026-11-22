@@ -117,7 +117,7 @@ download_to() {
 }
 
 sha_of() {
-    sha256sum "$1" 2>/dev/null | awk '{print $1}'
+    sha256sum "$1" 2>/dev/null | cut -d' ' -f1
 }
 
 size_of() {
@@ -127,8 +127,9 @@ size_of() {
 
 is_quiet_hour() {
     [ "$DEFER_RESTART_AT_NIGHT" = "1" ] || return 1
-    hour=$(date +%H 2>/dev/null | sed 's/^0//')
+    hour=$(date +%H 2>/dev/null)
     [ -n "$hour" ] || return 1
+    case "$hour" in 0?) hour=${hour#0} ;; esac
     if [ "$QUIET_START" -gt "$QUIET_END" ]; then
         if [ "$hour" -ge "$QUIET_START" ] || [ "$hour" -lt "$QUIET_END" ]; then
             return 0
@@ -197,13 +198,12 @@ parse_manifest() {
     first=$(cat "$_raw.first")
     [ "$first" = "V|1" ] || die "unsupported manifest header: $first"
 
-    new_version=$(awk -F'|' '$1 == "VERSION" { gsub(/\r/, "", $2); print $2; exit }' "$MANIFEST_FILE")
+    new_version=$(grep '^VERSION|' "$MANIFEST_FILE" 2>/dev/null | head -n 1 | cut -d'|' -f2 | tr -d '\r')
     case "$new_version" in
         ''|*[!A-Za-z0-9._-]*) die "invalid version in manifest" ;;
     esac
 
-    awk -F'|' '$1 == "FILE" { print $2 "|" $3 "|" $4 "|" $5 "|" $6 "|" $7 }' \
-        "$MANIFEST_FILE" | tr -d '\r' > "$_raw"
+    grep '^FILE|' "$MANIFEST_FILE" 2>/dev/null | cut -d'|' -f2-7 | tr -d '\r' > "$_raw"
 
     [ -s "$_raw" ] || die "manifest has no FILE entries"
 
