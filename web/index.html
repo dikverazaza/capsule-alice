@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Capsule Alice</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:2rem;background:#121212;color:#eee}
+a{color:#8ab4f8}code{background:#222;padding:2px 6px;border-radius:4px}
+.card{background:#1e1e1e;border:1px solid #333;border-radius:10px;padding:1rem;margin:1rem 0}
+</style>
+</head>
+<body>
+<h1>Capsule Alice</h1>
+<div class="card">
+<p>Ассистент Алиса запущен.</p>
+<p><a href="https://ya.ru/device" target="_blank">Привязать Яндекс ID — ya.ru/device</a></p>
+<p><code>capsule-yandex-account login</code> — привязка через консоль.</p>
+</div>
+<div class="card" id="health">Проверка состояния…</div>
+<script>
+fetch('/api/health').then(r=>r.json()).then(j=>{
+  document.getElementById('health').textContent = JSON.stringify(j);
+}).catch(e=>{document.getElementById('health').textContent='API недоступен: '+e});
+</script>
+</body>
+</html>
