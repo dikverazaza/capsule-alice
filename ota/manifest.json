@@ -5,15 +5,15 @@
     {
       "dest": "/usr/bin/capsula-ota",
       "asset": "capsula-ota.sh",
-      "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/capsula-ota.sh",
-      "sha256": "abe905153b69c1a3fc2bb0b37be1512bc13df940139cc114a336bc704cabc193",
-      "size": 15319,
+      "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-ota.sh",
+      "sha256": "84c000b3f3a4e09ad4916586e213727a91099f61f5da527fc02f6b60b38602cb",
+      "size": 15393,
       "mode": "755"
     },
     {
       "dest": "/etc/init.d/S98capsula-ota",
       "asset": "S98capsula-ota",
-      "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/S98capsula-ota",
+      "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/S98capsula-ota",
       "sha256": "25b17776a06d6da0e704baff35f465beb373bd57a7a081c5f8c818ba541ba0e2",
       "size": 1213,
       "mode": "755"
@@ -21,7 +21,7 @@
     {
       "dest": "/etc/init.d/S50avahi-daemon",
       "asset": "S50avahi-daemon",
-      "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/S50avahi-daemon",
+      "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/S50avahi-daemon",
       "sha256": "3224e702b479895d761be78650de6b100f45ae44f619a7fa548fbf64ecb850eb",
       "size": 1433,
       "mode": "755"
@@ -29,7 +29,7 @@
     {
       "dest": "/usr/bin/capsula-alice",
       "asset": "capsula-alice",
-      "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/capsula-alice",
+      "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-alice",
       "sha256": "5ef40d88dca04d184afbc129aeb696cb4ca0cc3d798945068573061a744636b4",
       "size": 2218392,
       "mode": "755"
@@ -37,7 +37,7 @@
     {
       "dest": "/usr/bin/ring_daemon",
       "asset": "ring_daemon",
-      "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/ring_daemon",
+      "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/ring_daemon",
       "sha256": "4b872060b9cac225fff013d34cf2f61bf3473e7b52fd574764bf47d669929bee",
       "size": 1773224,
       "mode": "755"
@@ -45,7 +45,7 @@
     {
       "dest": "/usr/bin/wakewordd",
       "asset": "wakewordd",
-      "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/wakewordd",
+      "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/wakewordd",
       "sha256": "b1cdc0635ce831309ce0535be8691d024a5fd6e48c2f6715f84729f30f4b7763",
       "size": 7899040,
       "mode": "755"
@@ -53,7 +53,7 @@
     {
       "dest": "/usr/bin/capsula-audio",
       "asset": "capsula-audio",
-      "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/capsula-audio",
+      "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-audio",
       "sha256": "65c344a9f24116af4f610b7ec22675b5da9a75e1cb46706d6afec130925b4f71",
       "size": 2301824,
       "mode": "755"
@@ -61,7 +61,7 @@
     {
       "dest": "/usr/bin/capsula-yandex",
       "asset": "capsula-yandex",
-      "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/capsula-yandex",
+      "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-yandex",
       "sha256": "1dc741dafa4f7984bf052d754d60cdb168b2bb7287b8eed5198cd2e7863f5c25",
       "size": 2891088,
       "mode": "755"
@@ -69,7 +69,7 @@
     {
       "dest": "/usr/bin/capsula-alice-launcher.sh",
       "asset": "capsula-alice-launcher.sh",
-      "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/capsula-alice-launcher.sh",
+      "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-alice-launcher.sh",
       "sha256": "85fec880b6431008524b2e78ff887f8cbb2ce73853ce3c41fa37890a38b20952",
       "size": 2782,
       "mode": "755"
