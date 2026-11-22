@@ -37,6 +37,7 @@ DEFER_RESTART_AT_NIGHT=1
 QUIET_START=23
 QUIET_END=7
 OTA_INTERVAL=600
+OTA_RETRY_INTERVAL=60
 
 [ -f "$CONF" ] && . "$CONF"
 
@@ -44,6 +45,7 @@ CURRENT_VERSION_FILE="$OTA_HOME/current_version"
 LAST_RESULT_FILE="$OTA_HOME/last_result"
 PENDING_RESTART="$OTA_HOME/restart_pending"
 LOCK_DIR="$OTA_HOME/.lock"
+DAEMON_LOCK="$OTA_HOME/.daemon.lock"
 
 mkdir -p "$OTA_HOME" "$BACKUP" || exit 1
 rm -rf "$WORK" 2>/dev/null
@@ -341,11 +343,37 @@ do_check() {
     return 0
 }
 
+acquire_daemon_lock() {
+    if mkdir "$DAEMON_LOCK" 2>/dev/null; then
+        printf '%s\n' "$$" > "$DAEMON_LOCK/pid"
+        printf '%s\n' "$$" > "$OTA_PID_FILE" 2>/dev/null
+        return 0
+    fi
+    old_pid=$(cat "$DAEMON_LOCK/pid" 2>/dev/null || printf '')
+    if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then
+        log "OTA daemon already running (pid $old_pid)."
+        return 1
+    fi
+    rm -rf "$DAEMON_LOCK" 2>/dev/null
+    if mkdir "$DAEMON_LOCK" 2>/dev/null; then
+        printf '%s\n' "$$" > "$DAEMON_LOCK/pid"
+        printf '%s\n' "$$" > "$OTA_PID_FILE" 2>/dev/null
+        return 0
+    fi
+    return 1
+}
+
 do_daemon() {
     case "$OTA_INTERVAL" in
         ''|*[!0-9]*) OTA_INTERVAL=600 ;;
     esac
     [ "$OTA_INTERVAL" -ge 60 ] || OTA_INTERVAL=60
+    case "$OTA_RETRY_INTERVAL" in
+        ''|*[!0-9]*) OTA_RETRY_INTERVAL=60 ;;
+    esac
+    [ "$OTA_RETRY_INTERVAL" -ge 10 ] || OTA_RETRY_INTERVAL=10
+
+    acquire_daemon_lock || return 0
 
     self="$0"
     case "$self" in
@@ -353,11 +381,18 @@ do_daemon() {
         *) self="$(pwd)/$self" ;;
     esac
 
-    log "OTA daemon started (interval ${OTA_INTERVAL}s)"
-    trap 'log "OTA daemon stopped"; exit 0' HUP INT TERM
+    log "OTA daemon started (interval ${OTA_INTERVAL}s, retry ${OTA_RETRY_INTERVAL}s)"
+    trap 'rm -rf "$DAEMON_LOCK" 2>/dev/null; rm -f "$OTA_PID_FILE" 2>/dev/null; log "OTA daemon stopped"; exit 0' HUP INT TERM
+
+    # Give Wi-Fi/DNS a moment after boot before the first attempt.
+    sleep 20
     while true; do
-        "$self" check >>"$LOG_FILE" 2>&1
-        sleep "$OTA_INTERVAL"
+        if "$self" check >>"$LOG_FILE" 2>&1; then
+            sleep "$OTA_INTERVAL"
+        else
+            log "OTA check failed; retrying in ${OTA_RETRY_INTERVAL}s."
+            sleep "$OTA_RETRY_INTERVAL"
+        fi
     done
 }
 
@@ -365,6 +400,8 @@ do_status() {
     current_version=$(cat "$CURRENT_VERSION_FILE" 2>/dev/null || printf 'none')
     last_result=$(cat "$LAST_RESULT_FILE" 2>/dev/null || printf 'never')
     last_check=$(cat "$LAST_CHECK_FILE" 2>/dev/null || printf 'never')
+    daemon_pid=$(cat "$OTA_PID_FILE" 2>/dev/null || printf 'not running')
+    printf 'daemon:    %s\n' "$daemon_pid"
     printf 'installed: %s\n' "$current_version"
     printf 'last:      %s\n' "$last_result"
     printf 'checked:   %s\n' "$last_check"
