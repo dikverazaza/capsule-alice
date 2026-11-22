@@ -10,15 +10,16 @@
 #   daemon    run checks forever every OTA_INTERVAL seconds (default 600)
 #
 # No token is stored on the device. Manifest and assets are public raw files
-# pinned to the moving git tag "ota-latest", which avoids CDN staleness.
+# from the "main" branch. GitHub's raw CDN can keep serving an old manifest for
+# a moved tag for a long time; main becomes current immediately after publish.
 # BusyBox wget does not validate TLS certificates, so every asset is verified
 # against SHA-256 + size values from the manifest before any file is replaced.
 
 set -u
 
-OTA_BASE_URL="${CAPSULA_OTA_BASE_URL:-https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota}"
+OTA_BASE_URL="${CAPSULA_OTA_BASE_URL:-https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota}"
 MANIFEST_URL="${CAPSULA_OTA_MANIFEST_URL:-$OTA_BASE_URL/manifest.txt}"
-ASSET_PREFIX="${CAPSULA_OTA_ASSET_PREFIX:-https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/}"
+ASSET_PREFIX="${CAPSULA_OTA_ASSET_PREFIX:-https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/}"
 
 OTA_HOME="${CAPSULA_OTA_HOME:-/data/ota}"
 # Staging lives in tmpfs: /data on the capsule is only ~63 MB and is often full.
