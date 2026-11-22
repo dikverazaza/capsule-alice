@@ -20,7 +20,8 @@ MANIFEST_URL="${CAPSULA_OTA_MANIFEST_URL:-$OTA_BASE_URL/manifest.txt}"
 ASSET_PREFIX="${CAPSULA_OTA_ASSET_PREFIX:-https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/}"
 
 OTA_HOME="${CAPSULA_OTA_HOME:-/data/ota}"
-WORK="$OTA_HOME/work"
+# Staging lives in tmpfs: /data on the capsule is only ~63 MB and is often full.
+WORK="/tmp/capsula-ota-work"
 BACKUP="$OTA_HOME/backup"
 CONF="${CAPSULA_OTA_CONF:-/etc/capsula-ota.conf}"
 LOG_FILE="/tmp/capsula-ota.log"
@@ -39,7 +40,9 @@ LAST_RESULT_FILE="$OTA_HOME/last_result"
 PENDING_RESTART="$OTA_HOME/restart_pending"
 LOCK_DIR="$OTA_HOME/.lock"
 
-mkdir -p "$OTA_HOME" "$WORK" "$BACKUP" || exit 1
+mkdir -p "$OTA_HOME" "$BACKUP" || exit 1
+rm -rf "$WORK" 2>/dev/null
+mkdir -p "$WORK" || exit 1
 
 rotate_log() {
     [ -f "$LOG_FILE" ] || return 0
@@ -78,7 +81,7 @@ acquire_lock() {
     fi
     mkdir -p "$LOCK_DIR" || die "cannot create lock directory"
     printf '%s\n' "$$" > "$LOCK_DIR/pid"
-    trap 'rm -rf "$LOCK_DIR" 2>/dev/null' EXIT HUP INT TERM
+    trap 'rm -rf "$LOCK_DIR" "$WORK" 2>/dev/null' EXIT HUP INT TERM
 }
 
 allowed_dest() {
@@ -256,8 +259,19 @@ do_check() {
     fi
     log "Update available: $current_version -> $new_version"
 
-    # Download and verify everything before touching any installed file.
+    # Download and verify only files that really differ from what is installed.
+    # This matters on the capsule: /data is small and already nearly full.
+    : > "$WORK/skip.list"
     while IFS='|' read -r dest asset url sha size mode; do
+        if [ -f "$dest" ]; then
+            installed_sha=$(sha_of "$dest")
+            installed_size=$(size_of "$dest")
+            if [ "$installed_sha" = "$sha" ] && [ "$installed_size" = "$size" ]; then
+                printf '%s\n' "$asset" >> "$WORK/skip.list"
+                log "Already current: $dest"
+                continue
+            fi
+        fi
         staged="$WORK/$asset"
         download_to "$url" "$staged" || die "download failed: $asset"
         actual_size=$(size_of "$staged")
@@ -267,12 +281,13 @@ do_check() {
         log "Verified $asset ($actual_size bytes)."
     done < "$WORK/files.list"
 
-    # Snapshot the files that are about to be replaced.
+    # Snapshot only files that are about to be replaced.
     snapshot="$BACKUP/$current_version"
     mkdir -p "$snapshot"
     : > "$snapshot/files.list"
     need_restart=0
     while IFS='|' read -r dest asset url sha size mode; do
+        grep -Fqx "$asset" "$WORK/skip.list" >/dev/null 2>&1 && continue
         if [ -e "$dest" ]; then
             cp -p "$dest" "$snapshot/$(basename "$dest")" 2>/dev/null || die "backup failed: $dest"
         fi
@@ -285,6 +300,7 @@ do_check() {
 
     installed_ok=1
     while IFS='|' read -r dest asset url sha size mode; do
+        grep -Fqx "$asset" "$WORK/skip.list" >/dev/null 2>&1 && continue
         staged="$WORK/$asset"
         cp -f "$staged" "$dest.new" 2>/dev/null || { installed_ok=0; break; }
         chmod "$mode" "$dest.new" 2>/dev/null || { installed_ok=0; break; }
