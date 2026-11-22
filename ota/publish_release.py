@@ -84,7 +84,7 @@ def build_manifest(cfg: dict):
     version = cfg["version"]
     base = cfg.get(
         "asset_url_base",
-        f"https://raw.githubusercontent.com/{REPO}/ota-latest/ota/assets",
+        f"https://raw.githubusercontent.com/{REPO}/main/ota/assets",
     ).rstrip("/")
 
     lines = ["V|1", f"VERSION|{version}"]
