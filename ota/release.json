@@ -1,0 +1,56 @@
+{
+  "tag": "v20261123.01",
+  "version": "20261123.01",
+  "name": "Capsule Alice OTA 2026-11-23.01",
+  "body": "First OTA release.\n\n- silent updater with SHA-256 verification, staged install and rollback\n- longer listening windows and dynamic cloud replies\n- Vins refusal sanitizer\n- ring watchdog against stuck animations\n- keyboard-click rejection\n- quiet startup: no automatic unmute, volume capped at 20%",
+  "files": [
+    {
+      "dest": "/usr/bin/capsula-ota",
+      "asset": "capsula-ota.sh",
+      "source": "ota/capsula-ota.sh",
+      "mode": "755"
+    },
+    {
+      "dest": "/etc/init.d/S98capsula-ota",
+      "asset": "S98capsula-ota",
+      "source": "ota/S98capsula-ota",
+      "mode": "755"
+    },
+    {
+      "dest": "/usr/bin/capsula-alice",
+      "asset": "capsula-alice",
+      "source": "target/aarch64-unknown-linux-musl/release/capsula-alice",
+      "mode": "755"
+    },
+    {
+      "dest": "/usr/bin/ring_daemon",
+      "asset": "ring_daemon",
+      "source": "services/ring_daemon/ring_daemon",
+      "mode": "755"
+    },
+    {
+      "dest": "/usr/bin/wakewordd",
+      "asset": "wakewordd",
+      "source": "../_tmp/wakewordd-tuned",
+      "mode": "755"
+    },
+    {
+      "dest": "/usr/bin/capsula-audio",
+      "asset": "capsula-audio",
+      "source": "build-out/capsula-audio",
+      "mode": "755"
+    },
+    {
+      "dest": "/usr/bin/capsula-yandex",
+      "asset": "capsula-yandex",
+      "source": "build-out/capsula-yandex",
+      "mode": "755"
+    },
+    {
+      "dest": "/usr/bin/capsula-alice-launcher.sh",
+      "asset": "capsula-alice-launcher.sh",
+      "source": "scripts/capsula-alice-launcher.sh",
+      "mode": "755"
+    }
+  ]
+}
