@@ -1,9 +1,9 @@
 {
-  "tag": "v20261123.03",
-  "version": "20261123.03",
-  "name": "Capsule Alice OTA 2026-11-23.03",
+  "tag": "v20261123.04",
+  "version": "20261123.04",
+  "name": "Capsule Alice OTA 2026-11-23.04",
   "asset_url_base": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets",
-  "body": "Boot-independent periodic OTA.\n\n- standalone daemon checks every 10 minutes\n- autostart via S98 and S50avahi-daemon with shared PID file\n- persistent log and last-check timestamp\n- each check runs in a child process so failures cannot kill the daemon\n- OTA can now update both init scripts through the manifest\n- includes v20261123.02 ring and barge-in fixes",
+  "body": "Single robust OTA daemon.\n\n- daemon lock prevents duplicates when S98 and S50 race at boot\n- failed network check retries after 60 s, then returns to the 10 minute interval\n- waits 20 s after boot for Wi-Fi/DNS\n- status shows daemon PID\n- includes v20261123.03 periodic OTA and v20261123.02 ring fixes",
   "files": [
     {
       "dest": "/usr/bin/capsula-ota",
