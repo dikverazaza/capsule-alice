@@ -6,8 +6,8 @@
       "dest": "/usr/bin/capsula-ota",
       "asset": "capsula-ota.sh",
       "url": "https://github.com/dikverazaza/capsule-alice/releases/download/v20261123.01/capsula-ota.sh",
-      "sha256": "3191cdad2655542e1a9396a8847ca0ddc9d73725fad6cf8b9c890bbd08157327",
-      "size": 10935,
+      "sha256": "0162a35a83f650dd54feb43b31e78e9d38e12af35c2456fabe795b3ed75a6b48",
+      "size": 10928,
       "mode": "755"
     },
     {
