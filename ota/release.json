@@ -1,9 +1,9 @@
 {
-  "tag": "v20261123.05",
-  "version": "20261123.05",
-  "name": "Capsule Alice OTA 2026-11-23.05",
+  "tag": "v20261123.06",
+  "version": "20261123.06",
+  "name": "Capsule Alice OTA 2026-11-23.06",
   "asset_url_base": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets",
-  "body": "Ignore stale manifests and clean duplicate PID files.\n\n- version comparison uses sort -V; an older manifest cannot downgrade a capsule\n- duplicate daemon removes the stale PID file before exiting\n- includes v20261123.04 single-daemon lock and v20261123.03 periodic OTA",
+  "body": "Keep the active OTA daemon PID accurate.\n\n- duplicate daemon restores the active PID instead of clearing the file\n- running daemon rewrites its PID every check cycle\n- includes stale-manifest protection, single-daemon lock and 10 minute checks",
   "files": [
     {
       "dest": "/usr/bin/capsula-ota",
