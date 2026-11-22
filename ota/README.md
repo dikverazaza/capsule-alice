@@ -2,11 +2,11 @@
 
 Silent, checksum-verified updates from public GitHub raw files. No token is stored on the capsule.
 
-The capsule's BusyBox `wget` can reach `raw.githubusercontent.com` but cannot complete TLS to `api.github.com` or `github.com`, so both manifest and binaries are served from raw GitHub content pinned to the moving git tag `ota-latest`.
+The capsule's BusyBox `wget` can reach `raw.githubusercontent.com` but cannot complete TLS to `api.github.com` or `github.com`, so both manifest and binaries are served from raw GitHub content on the `main` branch. A moving tag such as `ota-latest` can keep resolving to an old commit in the raw CDN for hours; `main` becomes current immediately after publishing.
 
 ## How it works
 
-1. `/usr/bin/capsula-ota check` downloads `https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/manifest.txt`.
+1. `/usr/bin/capsula-ota check` downloads `https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/manifest.txt`.
 2. The manifest lists version, destination path, raw asset URL, SHA-256, size and mode for each file.
 3. Files whose installed SHA-256 already matches the manifest are skipped. Changed assets are downloaded to `/tmp/capsula-ota-work` (tmpfs), then size and SHA-256 are checked **before** any installed file is touched.
 4. Existing files are copied to `/data/ota/backup/<old-version>`.
@@ -30,7 +30,7 @@ The updater only accepts a fixed whitelist of destinations:
 /etc/init.d/S98capsula-ota
 ```
 
-Asset URLs must point to `https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/...`.
+Asset URLs must point to `https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/...`.
 
 Version comparison uses `sort -V`; an older manifest is ignored so a stale raw CDN response cannot downgrade a capsule. Recovery from a newer version back to an older one is possible only with `capsula-ota force`.
 
@@ -91,26 +91,7 @@ git commit -m "OTA release <version>"
 git push
 ```
 
-`publish_release.py` uses only Python's standard library. It writes `ota/manifest.txt` plus `ota/manifest.json`, and also mirrors the assets into a GitHub Release for archival. After the manifest and `ota/assets/` are committed, move the `ota-latest` tag to that commit:
-
-```sh
-GITHUB_TOKEN=... python - <<'PY'
-import json, os, urllib.request
-sha = "<commit-sha>"
-req = urllib.request.Request(
-    "https://api.github.com/repos/dikverazaza/capsule-alice/git/refs/tags/ota-latest",
-    data=json.dumps({"sha": sha}).encode(),
-    headers={
-        "Accept": "application/vnd.github+json",
-        "Authorization": "Bearer " + os.environ["GITHUB_TOKEN"],
-        "Content-Type": "application/json",
-        "User-Agent": "capsula-ota-publisher",
-    },
-    method="PATCH",
-)
-print(urllib.request.urlopen(req, timeout=60).read().decode()[:200])
-PY
-```
+`publish_release.py` uses only Python's standard library. It writes `ota/manifest.txt` plus `ota/manifest.json`, and also mirrors the assets into a GitHub Release for archival. After the manifest and `ota/assets/` are committed and pushed to `main`, the capsule sees the new version on its next check. The `ota-latest` tag may still be moved for archival convenience, but it is no longer used by the client because the raw CDN caches moved tags too aggressively.
 
 ## Security notes
 
