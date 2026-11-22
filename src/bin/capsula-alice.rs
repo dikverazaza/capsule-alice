@@ -1873,6 +1873,9 @@ fi
     // Защита от эха собственного ответа в первые мгновения окна продолжения.
     let mut followup_guard_until = Instant::now();
     let mut followup_speech_chunks: u32 = 0;
+    // Barge-in during TTS: wake word may be masked by the speaker, so accept
+    // sustained confident speech as an interrupt too.
+    let mut barge_in_speech_chunks: u32 = 0;
     let mut speech_end_time = Instant::now();
     let mut last_debug_log = Instant::now();
     // Дедлайн окна ожидания команды; пока он не истёк, кольцо «listen» не гаснет.
@@ -2096,22 +2099,46 @@ fi
                 continue;
             }
 
-            // Прерывание (Barge-in): касание панели или слово «Алиса» во время речи
-            if touch_woke || local_wake {
+            // Прерывание (Barge-in): касание, «Алиса» или уверенная речь во время ответа.
+            // Wake word может маскироваться собственным ТТС, поэтому добавляем
+            // энергетический детектор с защитой от эха и ударных шумов.
+            let barge_threshold = (noise_floor * 1.35 + 40.0).max(320.0);
+            let crest = peak / rms.max(1.0);
+            let speech_has_tail = speech_end_time > Instant::now() + Duration::from_millis(800);
+            if speech_has_tail && rms > barge_threshold && crest < 8.0 {
+                barge_in_speech_chunks += 1;
+            } else {
+                barge_in_speech_chunks = 0;
+            }
+
+            let voice_barge = barge_in_speech_chunks >= 10; // ~200 мс уверенной речи
+            if touch_woke || local_wake || voice_barge {
                 if touch_woke {
                     println!("\n[!] ПРЕРЫВАНИЕ КАСАНИЕМ ПАНЕЛИ.");
-                } else {
+                } else if local_wake {
                     println!("\n[!] ПРЕРЫВАНИЕ ГОЛОСОМ: «Алиса» во время ответа.");
+                } else {
+                    println!("\n[!] ПРЕРЫВАНИЕ РЕЧЬЮ во время ответа (RMS={:.0} > {:.0}).", rms, barge_threshold);
                 }
                 stop_speech();
                 play_chime();
                 set_alice_busy(true);
                 set_ring("listen");
                 listen_deadline = Instant::now() + COMMAND_LISTEN_WINDOW;
-                state = "RECORDING_COMMAND";
-                sleep(Duration::from_millis(200)).await;
-                while pcm_rx.try_recv().is_ok() {}
+
+                // Сохраняем начало фразы, которой пользователь перебил Алису.
+                // Раньше эти чанки выбрасывались, и команда часто терялась.
+                let mut seed: VecDeque<Vec<u8>> = audio_pre_buffer.clone();
+                while let Ok(chunk) = pcm_rx.try_recv() {
+                    if seed.len() >= 25 {
+                        seed.pop_front();
+                    }
+                    seed.push_back(chunk);
+                }
+                pending_seed = seed.into_iter().collect();
                 audio_pre_buffer.clear();
+                barge_in_speech_chunks = 0;
+                state = "RECORDING_COMMAND";
                 continue;
             }
             continue;
@@ -2216,7 +2243,8 @@ fi
         // State 4: RECORDING_COMMAND (User is speaking their command)
         // -------------------------------------------------------------------
         if state == "RECORDING_COMMAND" {
-            set_ring("listen");
+            // Кольцо уже переведено в listen блоком активации/прерывания.
+            // Повторная команда сбрасывала бы анимацию на первый кадр.
             let t_record_start = Instant::now();
 
             // Заранее устанавливаем ДВА WebSocket, пока пользователь произносит команду:
