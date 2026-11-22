@@ -1,9 +1,9 @@
 {
-  "tag": "v20261123.02",
-  "version": "20261123.02",
-  "name": "Capsule Alice OTA 2026-11-23.02",
+  "tag": "v20261123.03",
+  "version": "20261123.03",
+  "name": "Capsule Alice OTA 2026-11-23.03",
   "asset_url_base": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets",
-  "body": "Ring and barge-in fixes.\n\n- repeated listen/think/speak commands no longer restart ring animation\n- barge-in now accepts sustained speech as well as the wake word\n- the beginning of an interrupting phrase is preserved for ASR\n- no duplicate listen command when recording starts\n- includes all v20261123.01 changes: verified OTA, quiet startup, ring watchdog, Vins fixes",
+  "body": "Boot-independent periodic OTA.\n\n- standalone daemon checks every 10 minutes\n- autostart via S98 and S50avahi-daemon with shared PID file\n- persistent log and last-check timestamp\n- each check runs in a child process so failures cannot kill the daemon\n- OTA can now update both init scripts through the manifest\n- includes v20261123.02 ring and barge-in fixes",
   "files": [
     {
       "dest": "/usr/bin/capsula-ota",
@@ -15,6 +15,12 @@
       "dest": "/etc/init.d/S98capsula-ota",
       "asset": "S98capsula-ota",
       "source": "ota/assets/S98capsula-ota",
+      "mode": "755"
+    },
+    {
+      "dest": "/etc/init.d/S50avahi-daemon",
+      "asset": "S50avahi-daemon",
+      "source": "ota/assets/S50avahi-daemon",
       "mode": "755"
     },
     {
