@@ -6,8 +6,8 @@
       "dest": "/usr/bin/capsula-ota",
       "asset": "capsula-ota.sh",
       "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/capsula-ota.sh",
-      "sha256": "5d4107a1c6d6aabf071352671ca94a0330c9d933f4a29c00157c44277e67918f",
-      "size": 11016,
+      "sha256": "53a77481e0b285946828206de25fe53a30df5f72e877881f489220efd31ca810",
+      "size": 11777,
       "mode": "755"
     },
     {
