@@ -2,23 +2,31 @@
 # /etc/init.d/S99capsula-alice
 # Autostart init service for Alice Assistant on VK Capsule Mini
 
+stop_all() {
+    killall -9 capsula-alice capsula-yandex wakewordd ring_daemon capsule_onboarding wifi_setup_helper.sh parec 2>/dev/null
+    rm -f /var/run/capsula-alice.pid /var/run/capsula-yandex.pid /var/run/wakewordd.pid /var/run/ring_daemon.pid /var/run/capsule_onboarding.pid
+}
+
+start_all() {
+    echo "Starting Alice Assistant Service..."
+    nohup /usr/bin/capsula-alice-launcher.sh >/tmp/capsula-alice-launcher.log 2>&1 &
+}
+
 case "$1" in
   start)
-    echo "Starting Alice Assistant Service..."
-    /usr/bin/capsula-alice-launcher.sh &
+    start_all
     ;;
   stop)
     echo "Stopping Alice Assistant Service..."
-    killall -9 capsula-alice capsula-yandex wakewordd ring_daemon parec 2>/dev/null
-    echo "off" > /tmp/ring.fifo 2>/dev/null
+    stop_all
     ;;
   restart)
-    "$0" stop
+    stop_all
     sleep 2
-    "$0" start
+    start_all
     ;;
   status)
-    pgrep -a capsula-alice
+    ps | grep -E "capsula-alice|capsula-yandex|wakewordd|ring_daemon|capsule_onboarding|wifi_setup_helper" | grep -v grep
     ;;
   *)
     echo "Usage: $0 {start|stop|restart|status}"
