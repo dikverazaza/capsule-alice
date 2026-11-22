@@ -669,7 +669,7 @@ static void handle_client(int client_fd) {
         unlink("/data/yandex_credentials.json");
         unlink("/tmp/yandex_credentials.json");
         unlink("/tmp/capsula-yandex-player-state.json");
-        system("killall -9 capsula-alice capsula-yandex 2>/dev/null; echo 'off' > /tmp/ring.fifo 2>/dev/null");
+        system("killall -9 capsula-alice capsula-yandex 2>/dev/null");
         send_response(client_fd, 200, "application/json", "{\"status\":\"ok\"}", 15);
         close(client_fd);
         return;
@@ -679,8 +679,8 @@ static void handle_client(int client_fd) {
     if (strcmp(uri, "/api/yandex_code") == 0) {
         char cmd[512];
         snprintf(cmd, sizeof(cmd),
-            "/usr/lib/capsula-root/bin/curl -k -s -X POST https://oauth.yandex.ru/device/code "
-            "-d 'client_id=" CLIENT_ID "&device_name=CapsuleMiniAlice'");
+            "wget -q -O - -T 15 --post-data 'client_id=" CLIENT_ID "&device_name=CapsuleMiniAlice' "
+            "https://oauth.yandex.ru/device/code");
         FILE *fp = popen(cmd, "r");
         char resp[1024] = {0};
         if (fp) {
@@ -698,8 +698,8 @@ static void handle_client(int client_fd) {
         sscanf(uri + 22, "%127[^& \r\n]", dev_code);
         char cmd[1024];
         snprintf(cmd, sizeof(cmd),
-            "/usr/lib/capsula-root/bin/curl -k -s -X POST https://oauth.yandex.ru/token "
-            "-d 'grant_type=device_code&code=%s&client_id=" CLIENT_ID "&client_secret=" CLIENT_SECRET "'",
+            "wget -q -O - -T 15 --post-data 'grant_type=device_code&code=%s&client_id=" CLIENT_ID "&client_secret=" CLIENT_SECRET "' "
+            "https://oauth.yandex.ru/token",
             dev_code);
         FILE *fp = popen(cmd, "r");
         char resp[2048] = {0};
@@ -737,8 +737,8 @@ static void handle_client(int client_fd) {
             if (strlen(token) > 0) {
                 char user_cmd[512];
                 snprintf(user_cmd, sizeof(user_cmd),
-                    "/usr/lib/capsula-root/bin/curl -k -s https://login.yandex.ru/info?format=json "
-                    "-H 'Authorization: OAuth %s'", token);
+                    "wget -q -O - -T 15 --header 'Authorization: OAuth %s' "
+                    "'https://login.yandex.ru/info?format=json'", token);
                 FILE *uf = popen(user_cmd, "r");
                 if (uf) {
                     char ubuf[1024] = {0};
