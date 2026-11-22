@@ -172,6 +172,28 @@ sed -i 's/\r$//' /usr/bin/capsula-* /usr/bin/wifi_setup_helper.sh /usr/bin/capsu
 
 ---
 
+## 🔄 OTA-обновления
+
+Колонка может обновляться «по воздуху» из публичных GitHub Releases без токена на устройстве.
+
+```bash
+# однократная установка клиента
+adb push ota/capsula-ota.sh /usr/bin/capsula-ota
+adb shell chmod 755 /usr/bin/capsula-ota
+adb push ota/S98capsula-ota /etc/init.d/S98capsula-ota
+adb shell chmod 755 /etc/init.d/S98capsula-ota
+
+# проверка и установка обновления
+adb shell /usr/bin/capsula-ota check
+adb shell /usr/bin/capsula-ota status
+```
+
+Клиент проверяет SHA-256 и размер каждого файла, ставит файлы через временные `.new`-файлы с атомарной заменой, делает резервную копию и умеет откатываться командой `capsula-ota rollback`. В ночное время (23:00–07:00) перезапуск сервисов откладывается до следующей проверки днём; звук и раз громкости при обновлении не включаются.
+
+Подробности и порядок публикации релиза: [`ota/README.md`](ota/README.md).
+
+---
+
 ## 📄 Лицензия
 
 Проект распространяется под свободной лицензией [MIT](LICENSE).
