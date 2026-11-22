@@ -26,6 +26,27 @@ struct frame_req {
 static int g_ring_fd = -1;
 static volatile sig_atomic_t g_running = 1;
 
+static void log_ring_to(const char *path, const char *line) {
+    int fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fd < 0) return;
+    char buf[256];
+    int n = snprintf(buf, sizeof(buf), "%ld %s\n", (long)time(NULL), line);
+    if (n > 0) {
+        if (n >= (int)sizeof(buf)) n = (int)sizeof(buf) - 1;
+        ssize_t ignored = write(fd, buf, (size_t)n);
+        (void)ignored;
+    }
+    close(fd);
+}
+
+static void log_ring_command(const char *line) {
+    log_ring_to("/tmp/ring_commands.log", line);
+}
+
+static void log_ring_watchdog(const char *line) {
+    log_ring_to("/tmp/ring_watchdog.log", line);
+}
+
 void set_ring(uint8_t *buf) {
     if (g_ring_fd < 0) return;
     struct frame_req req = {
@@ -72,6 +93,19 @@ enum RingState {
     RING_VOLUME,
     RING_ALERT
 };
+
+static int ring_state_timeout_sec(enum RingState s) {
+    switch (s) {
+        case RING_WAKE:   return 3;    // мигновенный отклик на wake word
+        case RING_LISTEN: return 15;   // COMMAND_LISTEN_WINDOW = 10 с + запас
+        case RING_THINK:  return 25;   // Vins до 9 с + TTS до 15 с
+        case RING_SPEAK:  return 30;   // длинная реплика, но не вечно
+        case RING_MUSIC:  return 120;  // музыка может играть долго, но сработает предохранитель
+        case RING_ALERT:  return 70;   // будильник гасится через 60 с
+        case RING_VOLUME: return 4;    // собственный g_volume_until = 2 с
+        default:          return 0;    // OFF/NIGHT/MUTE — штатные постоянные состояния
+    }
+}
 
 static int g_volume_level = 35;
 static time_t g_volume_until = 0;
@@ -160,6 +194,7 @@ int main(int argc, char **argv) {
     }
 
     enum RingState current_ring_state = RING_OFF;
+    time_t state_since = time(NULL);
     clear_ring();
 
     uint8_t ring_buf[RING_CHANNELS];
@@ -195,6 +230,7 @@ int main(int argc, char **argv) {
                     while (*line == ' ') line++;
                     char *end = line + strlen(line) - 1;
                     while (end > line && *end == ' ') *end-- = '\0';
+                    if (*line) log_ring_command(line);
 
                     // --- RING COMMANDS ---
                     if (strncmp(line, "off", 3) == 0 || strncmp(line, "idle", 4) == 0 || strncmp(line, "stop", 4) == 0) {
@@ -289,6 +325,7 @@ int main(int argc, char **argv) {
                     }
                     // Any screen_* commands are safely ignored (no screen control)
 
+                    state_since = time(NULL);
                     line = strtok_r(NULL, "\r\n", &saveptr);
                 }
             }
@@ -297,6 +334,24 @@ int main(int argc, char **argv) {
         if (time(NULL) < g_pause_until) {
             usleep(40000);
             continue;
+        }
+
+        // 1.5 Hard watchdog: no animation may stay lit forever.
+        // Alice may crash, hang in Vins/TTS, or simply forget to send "off".
+        {
+            time_t now = time(NULL);
+            int limit = ring_state_timeout_sec(current_ring_state);
+            if (limit > 0 && now - state_since >= limit) {
+                char msg[128];
+                snprintf(msg, sizeof(msg), "watchdog: state=%d stuck %ld s -> off",
+                         (int)current_ring_state, (long)(now - state_since));
+                log_ring_watchdog(msg);
+                current_ring_state = g_mic_muted ? RING_MUTE
+                                   : (g_night_active ? RING_NIGHT : RING_OFF);
+                step = 0;
+                state_since = now;
+                clear_ring();
+            }
         }
 
         // 2. Render top LED ring
