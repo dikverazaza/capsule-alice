@@ -51,7 +51,7 @@ def api(method: str, path: str, token: str | None, payload=None):
 
 def upload_asset(release_id: int, name: str, source: Path, token: str):
     url = (
-        f"{API}/repos/{REPO}/releases/{release_id}/assets"
+        f"https://uploads.github.com/repos/{REPO}/releases/{release_id}/assets"
         f"?name={urllib.parse.quote(name)}"
     )
     data = source.read_bytes()
@@ -178,8 +178,9 @@ def main() -> int:
         if item["asset"] in by_name:
             api("DELETE", f"/repos/{REPO}/releases/assets/{by_name[item['asset']]}", token)
 
+    sources_by_asset = {item["asset"]: item["source"] for item in cfg["files"]}
     for item in files:
-        source = (ROOT / item["source"]).resolve()
+        source = (ROOT / sources_by_asset[item["asset"]]).resolve()
         upload_asset(release_id, item["asset"], source, token)
         print(f"uploaded {item['asset']}")
 
