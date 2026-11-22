@@ -273,6 +273,16 @@ do_check() {
         set_result "current $new_version"
         return 0
     fi
+    # raw.githubusercontent may briefly serve an older manifest after the tag
+    # moves. Never downgrade automatically because of that.
+    if [ "$force" != "1" ] && [ "$current_version" != "none" ]; then
+        highest=$(printf '%s\n%s\n' "$current_version" "$new_version" | sort -V | tail -n 1)
+        if [ "$highest" = "$current_version" ]; then
+            log "Manifest $new_version is older than installed $current_version; ignoring."
+            set_result "current $current_version"
+            return 0
+        fi
+    fi
     log "Update available: $current_version -> $new_version"
 
     # Download and verify only files that really differ from what is installed.
@@ -351,6 +361,10 @@ acquire_daemon_lock() {
     fi
     old_pid=$(cat "$DAEMON_LOCK/pid" 2>/dev/null || printf '')
     if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then
+        # start-stop-daemon may have written our PID before the lock check.
+        # Do not leave that stale PID behind when this duplicate exits.
+        written_pid=$(cat "$OTA_PID_FILE" 2>/dev/null || printf '')
+        [ "$written_pid" = "$$" ] && rm -f "$OTA_PID_FILE" 2>/dev/null
         log "OTA daemon already running (pid $old_pid)."
         return 1
     fi
