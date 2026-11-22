@@ -1,5 +1,8 @@
 # Rust build artifacts
 /target/
+/build-out/
+__pycache__/
+*.pyc
 **/*.rs.bk
 *.bak*
 Cargo.lock
