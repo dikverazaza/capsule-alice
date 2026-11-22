@@ -26,7 +26,7 @@
 #define RING_FIFO "/tmp/ring.fifo"
 #define TRIGGER_FILE "/tmp/wakeword.trigger"
 #define ALICE_BUSY_FILE "/tmp/alice_busy"
-#define ACTIVATION_THRESHOLD 0.340f // Бинарный патч: тишина <0.15, слабая «Алиса» ~0.30–0.35
+#define ACTIVATION_THRESHOLD 0.300f // Бинарный патч: тишина <0.27, слабая «Алиса» ~0.27–0.34
 #define PREAMP_GAIN 10.0f           // Бинарный патч: усиление Speex для модели
 
 static std::string get_parec_cmd() {
@@ -351,7 +351,7 @@ int main(int argc, char **argv) {
                         float max_l = f_logit > a_logit ? f_logit : a_logit;
                         float p_alisa = expf(a_logit - max_l) / (expf(f_logit - max_l) + expf(a_logit - max_l));
                         if (p_alisa > peak_p) peak_p = p_alisa;
-                        if (p_alisa >= 0.30f) sustained_frames++;
+                        if (p_alisa >= 0.27f) sustained_frames++;
                     }
 
                     time_t now = time(NULL);
