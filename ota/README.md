@@ -8,7 +8,7 @@ The capsule's BusyBox `wget` can reach `raw.githubusercontent.com` but cannot co
 
 1. `/usr/bin/capsula-ota check` downloads `https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/manifest.txt`.
 2. The manifest lists version, destination path, raw asset URL, SHA-256, size and mode for each file.
-3. Every asset is downloaded to `/data/ota/work`, then size and SHA-256 are checked **before** any installed file is touched.
+3. Files whose installed SHA-256 already matches the manifest are skipped. Changed assets are downloaded to `/tmp/capsula-ota-work` (tmpfs), then size and SHA-256 are checked **before** any installed file is touched.
 4. Existing files are copied to `/data/ota/backup/<old-version>`.
 5. New files are written as `<dest>.new`, `chmod`-ed, `sync`-ed and atomically `mv`-ed into place.
 6. On any install failure, the backup is restored automatically.
