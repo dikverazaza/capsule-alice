@@ -1,6 +1,6 @@
 {
-  "version": "20261123.01",
-  "tag": "v20261123.01",
+  "version": "20261123.02",
+  "tag": "v20261123.02",
   "files": [
     {
       "dest": "/usr/bin/capsula-ota",
@@ -22,16 +22,16 @@
       "dest": "/usr/bin/capsula-alice",
       "asset": "capsula-alice",
       "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/capsula-alice",
-      "sha256": "9ee280ae508306a6cf8b85014d5c01b61532822eb15a0fc99714a453ad3de3b7",
-      "size": 2214872,
+      "sha256": "0204e6aee09886b0a621303a73cdf8891bb8c6c08563b38b588fb8b76dc24b02",
+      "size": 2216792,
       "mode": "755"
     },
     {
       "dest": "/usr/bin/ring_daemon",
       "asset": "ring_daemon",
       "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/ota-latest/ota/assets/ring_daemon",
-      "sha256": "1eced2e49df001e74e974a2f76a0175d9376cb2c212858e918a2b8578b6e8437",
-      "size": 1773152,
+      "sha256": "4b872060b9cac225fff013d34cf2f61bf3473e7b52fd574764bf47d669929bee",
+      "size": 1773224,
       "mode": "755"
     },
     {
