@@ -7,6 +7,7 @@
 #   force     same as check but ignores the locally installed version
 #   status    print current/manifest version and last result
 #   rollback  restore the newest local backup
+#   daemon    run checks forever every OTA_INTERVAL seconds (default 600)
 #
 # No token is stored on the device. Manifest and assets are public raw files
 # pinned to the moving git tag "ota-latest", which avoids CDN staleness.
@@ -25,6 +26,9 @@ WORK="/tmp/capsula-ota-work"
 BACKUP="$OTA_HOME/backup"
 CONF="${CAPSULA_OTA_CONF:-/etc/capsula-ota.conf}"
 LOG_FILE="/tmp/capsula-ota.log"
+PERSISTENT_LOG="$OTA_HOME/ota.log"
+LAST_CHECK_FILE="$OTA_HOME/last_check"
+OTA_PID_FILE="/var/run/capsula-ota.pid"
 
 # Safe defaults; /etc/capsula-ota.conf may override them.
 ENABLED=1
@@ -32,6 +36,7 @@ RESTART_SERVICES=1
 DEFER_RESTART_AT_NIGHT=1
 QUIET_START=23
 QUIET_END=7
+OTA_INTERVAL=600
 
 [ -f "$CONF" ] && . "$CONF"
 
@@ -44,18 +49,25 @@ mkdir -p "$OTA_HOME" "$BACKUP" || exit 1
 rm -rf "$WORK" 2>/dev/null
 mkdir -p "$WORK" || exit 1
 
-rotate_log() {
-    [ -f "$LOG_FILE" ] || return 0
-    size=$(wc -c < "$LOG_FILE" | tr -d ' ')
-    if [ "${size:-0}" -gt 200000 ]; then
-        tail -n 300 "$LOG_FILE" > "$LOG_FILE.rot" 2>/dev/null
-        mv -f "$LOG_FILE.rot" "$LOG_FILE" 2>/dev/null
+rotate_one_log() {
+    _log="$1"
+    [ -f "$_log" ] || return 0
+    _size=$(wc -c < "$_log" | tr -d ' ')
+    if [ "${_size:-0}" -gt 200000 ]; then
+        tail -n 300 "$_log" > "$_log.rot" 2>/dev/null
+        mv -f "$_log.rot" "$_log" 2>/dev/null
     fi
+}
+
+rotate_log() {
+    rotate_one_log "$LOG_FILE"
+    rotate_one_log "$PERSISTENT_LOG"
 }
 
 log() {
     ts=$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || printf 'unknown-time')
     printf '%s %s\n' "$ts" "$*" >> "$LOG_FILE" 2>/dev/null
+    printf '%s %s\n' "$ts" "$*" >> "$PERSISTENT_LOG" 2>/dev/null
     printf '%s\n' "$*"
     rotate_log
 }
@@ -95,7 +107,8 @@ allowed_dest() {
         /usr/bin/wakewordd|\
         /usr/bin/ring_daemon|\
         /usr/bin/capsule_onboarding|\
-        /etc/init.d/S98capsula-ota)
+        /etc/init.d/S98capsula-ota|\
+        /etc/init.d/S50avahi-daemon)
             return 0
             ;;
         *)
@@ -242,6 +255,7 @@ do_check() {
     [ "$ENABLED" = "1" ] || { log "OTA disabled in configuration."; return 0; }
 
     acquire_lock
+    date '+%Y-%m-%d %H:%M:%S' > "$LAST_CHECK_FILE" 2>/dev/null
 
     MANIFEST_FILE="$WORK/manifest.txt"
     download_to "$MANIFEST_URL" "$MANIFEST_FILE" || die "cannot download manifest from $MANIFEST_URL"
@@ -293,7 +307,7 @@ do_check() {
         fi
         printf '%s|%s\n' "$dest" "$mode" >> "$snapshot/files.list"
         case "$dest" in
-            /usr/bin/capsula-ota|/etc/init.d/S98capsula-ota) ;;
+            /usr/bin/capsula-ota|/etc/init.d/S98capsula-ota|/etc/init.d/S50avahi-daemon) ;;
             *) need_restart=1 ;;
         esac
     done < "$WORK/files.list"
@@ -327,17 +341,40 @@ do_check() {
     return 0
 }
 
+do_daemon() {
+    case "$OTA_INTERVAL" in
+        ''|*[!0-9]*) OTA_INTERVAL=600 ;;
+    esac
+    [ "$OTA_INTERVAL" -ge 60 ] || OTA_INTERVAL=60
+
+    self="$0"
+    case "$self" in
+        /*) ;;
+        *) self="$(pwd)/$self" ;;
+    esac
+
+    log "OTA daemon started (interval ${OTA_INTERVAL}s)"
+    trap 'log "OTA daemon stopped"; exit 0' HUP INT TERM
+    while true; do
+        "$self" check >>"$LOG_FILE" 2>&1
+        sleep "$OTA_INTERVAL"
+    done
+}
+
 do_status() {
     current_version=$(cat "$CURRENT_VERSION_FILE" 2>/dev/null || printf 'none')
     last_result=$(cat "$LAST_RESULT_FILE" 2>/dev/null || printf 'never')
+    last_check=$(cat "$LAST_CHECK_FILE" 2>/dev/null || printf 'never')
     printf 'installed: %s\n' "$current_version"
-    printf 'last:     %s\n' "$last_result"
+    printf 'last:      %s\n' "$last_result"
+    printf 'checked:   %s\n' "$last_check"
+    printf 'interval:  %ss\n' "$OTA_INTERVAL"
     if [ -f "$PENDING_RESTART" ]; then
-        printf 'restart:  pending (quiet hours)\n'
+        printf 'restart:   pending (quiet hours)\n'
     else
-        printf 'restart:  not pending\n'
+        printf 'restart:   not pending\n'
     fi
-    printf 'manifest: %s\n' "$MANIFEST_URL"
+    printf 'manifest:  %s\n' "$MANIFEST_URL"
     [ -f "$LOG_FILE" ] && tail -n 15 "$LOG_FILE"
     return 0
 }
@@ -359,8 +396,9 @@ case "$cmd" in
     force)   do_check 1 ;;
     status)  do_status ;;
     rollback) do_rollback ;;
+    daemon|loop) do_daemon ;;
     *)
-        printf 'Usage: %s {check|force|status|rollback}\n' "$0" >&2
+        printf 'Usage: %s {check|force|status|rollback|daemon}\n' "$0" >&2
         exit 2
         ;;
 esac
