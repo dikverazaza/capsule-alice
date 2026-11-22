@@ -71,6 +71,7 @@ async fn main() -> Result<()> {
         auth: AuthData {
             salt: String::new(),
             hash: String::new(),
+            disabled: false,
         },
         http: reqwest::Client::builder()
             .timeout(Duration::from_secs(7))
