@@ -1,6 +1,6 @@
 V|1
 VERSION|20261123.01
-FILE|/usr/bin/capsula-ota|capsula-ota.sh|https://github.com/dikverazaza/capsule-alice/releases/download/v20261123.01/capsula-ota.sh|3191cdad2655542e1a9396a8847ca0ddc9d73725fad6cf8b9c890bbd08157327|10935|755
+FILE|/usr/bin/capsula-ota|capsula-ota.sh|https://github.com/dikverazaza/capsule-alice/releases/download/v20261123.01/capsula-ota.sh|0162a35a83f650dd54feb43b31e78e9d38e12af35c2456fabe795b3ed75a6b48|10928|755
 FILE|/etc/init.d/S98capsula-ota|S98capsula-ota|https://github.com/dikverazaza/capsule-alice/releases/download/v20261123.01/S98capsula-ota|629534dc99885a0cb9d00633120b87a75ea5e68b99aef50bad0249fd78b25932|790|755
 FILE|/usr/bin/capsula-alice|capsula-alice|https://github.com/dikverazaza/capsule-alice/releases/download/v20261123.01/capsula-alice|9ee280ae508306a6cf8b85014d5c01b61532822eb15a0fc99714a453ad3de3b7|2214872|755
 FILE|/usr/bin/ring_daemon|ring_daemon|https://github.com/dikverazaza/capsule-alice/releases/download/v20261123.01/ring_daemon|1eced2e49df001e74e974a2f76a0175d9376cb2c212858e918a2b8578b6e8437|1773152|755
