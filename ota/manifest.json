@@ -1,13 +1,13 @@
 {
-  "version": "20261123.21",
-  "tag": "v20261123.21",
+  "version": "20261123.22",
+  "tag": "v20261123.22",
   "files": [
     {
       "dest": "/usr/bin/capsula-ota",
       "asset": "capsula-ota.sh",
       "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-ota.sh",
-      "sha256": "e051435504c87ee2b374a6da004f3065254ccd447f1abe9eaeaf55628fa860fa",
-      "size": 16937,
+      "sha256": "f7f19dcd2e5b71e8e332f16ca5d1f40166fbd25e1602b32bb1d99d95f1ec8fd8",
+      "size": 17138,
       "mode": "755"
     },
     {
@@ -22,8 +22,8 @@
       "dest": "/etc/capsula-ota.conf",
       "asset": "capsula-ota.conf",
       "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-ota.conf",
-      "sha256": "47027e004341039e22e8f93cd9b0b5edbf4fcd35c68e0dbe79d516620b2bc805",
-      "size": 807,
+      "sha256": "9cd71c350b6d045626442390b0b1bd6ca91246231397026f12e91276e36a65b0",
+      "size": 897,
       "mode": "644"
     },
     {
