@@ -1,6 +1,6 @@
 {
-  "version": "20261123.17",
-  "tag": "v20261123.17",
+  "version": "20261123.18",
+  "tag": "v20261123.18",
   "files": [
     {
       "dest": "/usr/bin/capsula-ota",

@@ -1,5 +1,5 @@
 V|1
-VERSION|20261123.17
+VERSION|20261123.18
 FILE|/usr/bin/capsula-ota|capsula-ota.sh|https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-ota.sh|baf626f9a02ba66a18f3f602bdb2653ceaddf947f76568aa80c2dfc716c9948b|16195|755
 FILE|/etc/init.d/S98capsula-ota|S98capsula-ota|https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/S98capsula-ota|25b17776a06d6da0e704baff35f465beb373bd57a7a081c5f8c818ba541ba0e2|1213|755
 FILE|/etc/capsula-ota.conf|capsula-ota.conf|https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-ota.conf|47027e004341039e22e8f93cd9b0b5edbf4fcd35c68e0dbe79d516620b2bc805|807|644
