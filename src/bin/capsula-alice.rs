@@ -1971,10 +1971,6 @@ fi
     let mut followup_deadline = Instant::now();
     // Защита от эха собственного ответа в первые мгновения окна продолжения.
     let mut followup_guard_until = Instant::now();
-    let mut followup_speech_chunks: u32 = 0;
-    // Barge-in during TTS: wake word may be masked by the speaker, so accept
-    // sustained confident speech as an interrupt too.
-    let mut barge_in_speech_chunks: u32 = 0;
     let mut speech_end_time = Instant::now();
     let mut last_debug_log = Instant::now();
     // Дедлайн окна ожидания команды; пока он не истёк, кольцо «listen» не гаснет.
@@ -2217,28 +2213,14 @@ fi
                 continue;
             }
 
-            // Прерывание (Barge-in): касание, «Алиса» или уверенная речь во время ответа.
-            // Wake word может маскироваться собственным ТТС, поэтому добавляем
-            // энергетический детектор с защитой от эха и ударных шумов.
-            let barge_threshold = (noise_floor * 1.25 + 36.0).max(280.0);
-            let crest = peak / rms.max(1.0);
-            let speech_has_tail = speech_end_time > Instant::now() + Duration::from_millis(800);
-            // Шорох/клавиатура дают короткий всплеск с высоким crest.
-            // Прерывание разрешаем только на устойчивую речь: >=15 чанков (300 мс).
-            if speech_has_tail && rms > barge_threshold && crest < 4.5 {
-                barge_in_speech_chunks += 1;
-            } else {
-                barge_in_speech_chunks = 0;
-            }
-
-            let voice_barge = barge_in_speech_chunks >= 15; // ~300 мс уверенной речи
-            if touch_woke || local_wake || voice_barge {
+            // Прерывание (Barge-in) только по касанию или явному «Алиса».
+            // Энергетическое прерывание убрано: телевизор/разговор в комнате
+            // давали тот же crest и заставляли колонку отвечать на случайные слова.
+            if touch_woke || local_wake {
                 if touch_woke {
                     println!("\n[!] ПРЕРЫВАНИЕ КАСАНИЕМ ПАНЕЛИ.");
-                } else if local_wake {
-                    println!("\n[!] ПРЕРЫВАНИЕ ГОЛОСОМ: «Алиса» во время ответа.");
                 } else {
-                    println!("\n[!] ПРЕРЫВАНИЕ РЕЧЬЮ во время ответа (RMS={:.0} > {:.0}).", rms, barge_threshold);
+                    println!("\n[!] ПРЕРЫВАНИЕ ГОЛОСОМ: «Алиса» во время ответа.");
                 }
                 stop_speech();
                 play_chime();
@@ -2258,7 +2240,6 @@ fi
                 }
                 pending_seed = seed.into_iter().collect();
                 audio_pre_buffer.clear();
-                barge_in_speech_chunks = 0;
                 state = "RECORDING_COMMAND";
                 continue;
             }
@@ -2276,16 +2257,15 @@ fi
                 set_alice_busy(false);
                 let _ = std::fs::write(WAKE_TRIGGER_FILE, "");
                 state = "WAITING_WAKEWORD";
-                followup_speech_chunks = 0;
                 while pcm_rx.try_recv().is_ok() {}
                 audio_pre_buffer.clear();
                 continue;
             }
 
-            // Продолжение диалога: явный wake word ИЛИ уверенная речь после
-            // короткой защиты от эха собственного ответа.
+            // Продолжение диалога только по явному «Алиса» или касанию.
+            // Энергетическая ветка удалена: без проверки ASR она ловила
+            // телевизор и разговор в комнате как ответ пользователя.
             if activated {
-                followup_speech_chunks = 0;
                 println!("[!] Активация продолжения диалога по триггеру «Алиса» / сенсору!");
                 duck_music();
                 set_alice_busy(true);
@@ -2296,32 +2276,8 @@ fi
                 state = "RECORDING_COMMAND";
                 continue;
             }
-
             if Instant::now() < followup_guard_until {
-                followup_speech_chunks = 0;
                 continue;
-            }
-
-            let followup_threshold = (noise_floor * 1.12 + 36.0).max(230.0);
-            let crest = peak / rms.max(1.0);
-            // Клавиатура/шорох дают короткий пик при низком среднем уровне.
-            // Речь держит crest ~2.5–3; требуем устойчивые 12 чанков (240 мс).
-            if rms > followup_threshold && crest < 4.5 {
-                followup_speech_chunks += 1;
-                if followup_speech_chunks >= 12 {
-                    followup_speech_chunks = 0;
-                    println!("[!] Продолжение диалога: уверенная речь (RMS={:.0} > {:.0}, crest={:.1}).", rms, followup_threshold, crest);
-                    duck_music();
-                    set_alice_busy(true);
-                    set_ring("listen");
-                    pending_seed = audio_pre_buffer.iter().cloned().collect();
-                    audio_pre_buffer.clear();
-                    listen_deadline = Instant::now() + COMMAND_LISTEN_WINDOW;
-                    state = "RECORDING_COMMAND";
-                    continue;
-                }
-            } else {
-                followup_speech_chunks = 0;
             }
         }
 
