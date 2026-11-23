@@ -17,6 +17,18 @@
 
 set -u
 
+# Safe defaults. /etc/capsula-ota.conf is read BEFORE any path is derived,
+# so a user can override OTA_HOME, URLs, intervals and backup location.
+CONF="${CAPSULA_OTA_CONF:-/etc/capsula-ota.conf}"
+ENABLED=1
+RESTART_SERVICES=1
+DEFER_RESTART_AT_NIGHT=1
+QUIET_START=23
+QUIET_END=7
+OTA_INTERVAL=600
+OTA_RETRY_INTERVAL=60
+[ -f "$CONF" ] && . "$CONF"
+
 OTA_BASE_URL="${CAPSULA_OTA_BASE_URL:-https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota}"
 MANIFEST_URL="${CAPSULA_OTA_MANIFEST_URL:-$OTA_BASE_URL/manifest.txt}"
 ASSET_PREFIX="${CAPSULA_OTA_ASSET_PREFIX:-https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/}"
@@ -24,9 +36,7 @@ ASSET_PREFIX="${CAPSULA_OTA_ASSET_PREFIX:-https://raw.githubusercontent.com/dikv
 OTA_HOME="${CAPSULA_OTA_HOME:-/data/ota}"
 # Staging lives in tmpfs: /data on the capsule is only ~63 MB and is often full.
 WORK="/tmp/capsula-ota-work"
-# 113 has /data almost full. Keep snapshots on /data when there is room,
-# otherwise use tmpfs so updates still install. Rollback across reboot is
-# then unavailable, but the signed manifest is always re-downloadable.
+# If /data is nearly full, keep snapshots on tmpfs so updates still install.
 BACKUP="${CAPSULA_OTA_BACKUP_HOME:-$OTA_HOME/backup}"
 available_kb() {
     set -- $(df -Pk "$1" 2>/dev/null | tail -n 1)
@@ -39,22 +49,10 @@ if [ -z "${CAPSULA_OTA_BACKUP_HOME:-}" ]; then
         *) [ "$_ota_avail" -lt 12000 ] && BACKUP="/tmp/capsula-ota-backup" ;;
     esac
 fi
-CONF="${CAPSULA_OTA_CONF:-/etc/capsula-ota.conf}"
 LOG_FILE="/tmp/capsula-ota.log"
 PERSISTENT_LOG="$OTA_HOME/ota.log"
 LAST_CHECK_FILE="$OTA_HOME/last_check"
 OTA_PID_FILE="/var/run/capsula-ota.pid"
-
-# Safe defaults; /etc/capsula-ota.conf may override them.
-ENABLED=1
-RESTART_SERVICES=1
-DEFER_RESTART_AT_NIGHT=1
-QUIET_START=23
-QUIET_END=7
-OTA_INTERVAL=600
-OTA_RETRY_INTERVAL=60
-
-[ -f "$CONF" ] && . "$CONF"
 
 CURRENT_VERSION_FILE="$OTA_HOME/current_version"
 LAST_RESULT_FILE="$OTA_HOME/last_result"
@@ -125,7 +123,8 @@ allowed_dest() {
         /usr/bin/ring_daemon|\
         /usr/bin/capsule_onboarding|\
         /etc/init.d/S98capsula-ota|\
-        /etc/init.d/S50avahi-daemon)
+        /etc/init.d/S50avahi-daemon|\
+        /etc/capsula-ota.conf)
             return 0
             ;;
         *)
