@@ -54,7 +54,7 @@
       "dest": "/usr/bin/wakewordd",
       "asset": "wakewordd",
       "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/wakewordd",
-      "sha256": "10a7977843ab419322e281d278b1340015c2ed40e6263f18e83080bad67e482f",
+      "sha256": "f7515efbd859d72e34fec20edd6a6b3d80b30eb921167d933ccdfe161aa5f3a9",
       "size": 7899040,
       "mode": "755"
     },
