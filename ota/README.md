@@ -84,18 +84,26 @@ After that, updates are delivered by the release manifest itself, including upda
 
 ## Publishing a release
 
-The token is read only from the environment and never written to a manifest, log or config file:
+Releases are automatic. `.github/workflows/ota-release.yml` runs on every push to `main` unless the commit message contains `[skip ota]`. It:
+
+1. installs Rust `aarch64-unknown-linux-musl` and Zig 0.17.0,
+2. rebuilds `capsula-alice` from source and copies it into `ota/assets/`,
+3. increments the patch number in `ota/release.json` (`20261123.17` → `.18`),
+4. runs `publish_release.py` with the Actions-provided `GITHUB_TOKEN`,
+5. commits the regenerated manifest, release metadata and binary back to `main` with a `[skip ota]` message so the workflow does not loop.
+
+No token is stored on a capsule or in the repository. `wakewordd` is a prebuilt TFLite binary committed under `ota/assets/`; update that file in the repo when the spotter changes.
+
+For a manual one-off release outside Actions:
 
 ```sh
-# edit ota/release.json: tag, version, notes, file list
 python3 ota/publish_release.py --dry-run
 GITHUB_TOKEN=... python3 ota/publish_release.py
-git add ota/manifest.txt ota/manifest.json ota/release.json
-git commit -m "OTA release <version>"
-git push
 ```
 
-`publish_release.py` uses only Python's standard library. It writes `ota/manifest.txt` plus `ota/manifest.json`, and also mirrors the assets into a GitHub Release for archival. After the manifest and `ota/assets/` are committed and pushed to `main`, the capsule sees the new version on its next check. The `ota-latest` tag may still be moved for archival convenience, but it is no longer used by the client because the raw CDN caches moved tags too aggressively.
+`publish_release.py` uses only Python's standard library. It writes `ota/manifest.txt` plus `ota/manifest.json`, and mirrors the assets into a GitHub Release for archival. The `ota-latest` tag may still be moved for archival convenience, but it is no longer used by the client because the raw CDN caches moved tags too aggressively.
+
+The earlier ETXTBSY rollback is handled as well: if `mv` into a running executable fails, the updater stops that service and retries up to five times before considering the install failed.
 
 ## Security notes
 
