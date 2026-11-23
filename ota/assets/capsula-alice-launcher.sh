@@ -6,9 +6,26 @@
 mkdir -p /run/capsula-yandex /data/capsula-yandex /var/run /tmp
 chmod 777 /run/capsula-yandex /data/capsula-yandex /tmp
 
-# Keep the Alice identity across stock hostname regeneration at boot
-hostname alice 2>/dev/null
-echo alice > /etc/hostname 2>/dev/null
+# Both S50avahi and S97voice-agent may call this launcher at boot.
+# Only one supervisor may own the FIFO and the capture processes.
+LAUNCH_LOCK=/var/run/capsula-alice-launcher.lock
+if [ -d "$LAUNCH_LOCK" ]; then
+    old_pid=$(cat "$LAUNCH_LOCK/pid" 2>/dev/null || printf '')
+    if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then
+        exit 0
+    fi
+    rm -rf "$LAUNCH_LOCK" 2>/dev/null
+fi
+mkdir -p "$LAUNCH_LOCK" || exit 0
+printf '%s\n' "$$" > "$LAUNCH_LOCK/pid" 2>/dev/null
+trap 'rm -rf "$LAUNCH_LOCK" 2>/dev/null' EXIT HUP INT TERM
+
+# Only the primary capsule carries the Alice identity flag. The second
+# capsule keeps its factory hostname for separate mDNS/Bluetooth identity.
+if [ -f /etc/alice-identity ]; then
+    hostname alice 2>/dev/null
+    echo alice > /etc/hostname 2>/dev/null
+fi
 
 # Stop original voice-agent if present
 killall -9 voice-agent 2>/dev/null
