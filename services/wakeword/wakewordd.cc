@@ -26,11 +26,16 @@
 #define RING_FIFO "/tmp/ring.fifo"
 #define TRIGGER_FILE "/tmp/wakeword.trigger"
 #define ALICE_BUSY_FILE "/tmp/alice_busy"
-#define ACTIVATION_THRESHOLD 0.520f // Ложные срабатывания давали 0.382–0.449; чёткий «Алиса» выше 0.5
-#define SUSTAINED_THRESHOLD 0.380f  // Posterior должен держаться выше этого уровня
-#define PREAMP_GAIN 10.0f           // Бинарный патч: усиление Speex для модели
-#define HISTORY_FRAMES 24           // 24 шага по 10 мс = 240 мс истории
-#define MIN_SUSTAINED_FRAMES 8      // Не менее 80 мс уверенного постерона в окне
+// Скалярный порог не разделяет «паук» 0.449 и тихий «Алиса» 0.375–0.431.
+// Решение по форме пика: длительность, число устойчивых кадров и масса огибающей.
+#define ACTIVATION_THRESHOLD 0.360f  // Запас ниже спокойной речи «Алиса»
+#define SUSTAINED_FLOOR 0.240f       // Уровень выше фона 0.10–0.15
+#define NOISE_FLOOR 0.120f           // База для оценки массы огибающей
+#define PREAMP_GAIN 10.0f            // Бинарный патч: усиление Speex для модели
+#define HISTORY_FRAMES 20            // 200 мс, 10 мс/шаг
+#define MIN_BATCH_STEPS 3            // 3 из 6 шагов в батче 60 мс
+#define MIN_SUSTAINED_FRAMES 6       // 6 кадров в окне 200 мс
+#define MIN_NET_MASS 1.20f           // Площадь огибающей над шумом
 #define TRIGGER_COOLDOWN_SEC 2
 
 static std::string get_parec_cmd() {
@@ -236,9 +241,11 @@ int main(int argc, char **argv) {
 
     printf("[wakewordd] Запуск оффлайн-детектора Алисы (TFLite Micro)...\n");
     printf("[wakewordd] Загрузка модели из: %s\n", model_path);
-    printf("[wakewordd] Порог: %.3f, удержание: %.3f, история: %d/%d кадров, cooldown: %d c\n",
-           ACTIVATION_THRESHOLD, SUSTAINED_THRESHOLD, MIN_SUSTAINED_FRAMES,
-           HISTORY_FRAMES, TRIGGER_COOLDOWN_SEC);
+    printf("[wakewordd] Порог: %.3f, пол: %.3f, шум: %.3f, история: %d кадра, "
+           "батч: %d/%d, устойчиво: %d, масса: %.2f, cooldown: %d c\n",
+           ACTIVATION_THRESHOLD, SUSTAINED_FLOOR, NOISE_FLOOR, HISTORY_FRAMES,
+           MIN_BATCH_STEPS, BATCH_FRAMES, MIN_SUSTAINED_FRAMES,
+           MIN_NET_MASS, TRIGGER_COOLDOWN_SEC);
     fflush(stdout);
 
     FILE *mf = fopen(model_path, "rb");
@@ -358,22 +365,26 @@ int main(int argc, char **argv) {
                     TfLiteTensor *logits = interpreter.output(0);
                     float *l_data = logits->data.f;
                     // Softmax over the two class logits for every 10 ms step.
-                    // Keep a rolling history so short loud false hits cannot wake.
+                    // A burst consonant gives 1-2 high steps; "Алиса" gives a long packet.
+                    int batch_hits = 0;
                     for (int step = 0; step < BATCH_FRAMES; step++) {
                         float f_logit = l_data[step * 2 + 0];
                         float a_logit = l_data[step * 2 + 1];
                         float max_l = f_logit > a_logit ? f_logit : a_logit;
                         float p_alisa = expf(a_logit - max_l) / (expf(f_logit - max_l) + expf(a_logit - max_l));
+                        if (p_alisa >= SUSTAINED_FLOOR) batch_hits++;
                         g_prob_history[g_hist_head] = p_alisa;
                         g_hist_head = (g_hist_head + 1) % HISTORY_FRAMES;
                     }
 
                     float window_peak = 0.0f;
+                    float net_mass = 0.0f;
                     int sustained_frames = 0;
                     for (int i = 0; i < HISTORY_FRAMES; i++) {
                         float p = g_prob_history[i];
                         if (p > window_peak) window_peak = p;
-                        if (p >= SUSTAINED_THRESHOLD) sustained_frames++;
+                        if (p >= SUSTAINED_FLOOR) sustained_frames++;
+                        if (p > NOISE_FLOOR) net_mass += (p - NOISE_FLOOR);
                     }
 
                     time_t now = time(NULL);
@@ -388,11 +399,15 @@ int main(int argc, char **argv) {
                     }
 
                     if (window_peak >= ACTIVATION_THRESHOLD &&
+                        batch_hits >= MIN_BATCH_STEPS &&
                         sustained_frames >= MIN_SUSTAINED_FRAMES &&
+                        net_mass >= MIN_NET_MASS &&
                         (now - last_trigger_time >= TRIGGER_COOLDOWN_SEC)) {
                         last_trigger_time = now;
-                        printf("\n[wakewordd] >>> АЛИСА ОБНАРУЖЕНА! (score: %.3f, удержание: %d/%d) <<<\n",
-                               window_peak, sustained_frames, HISTORY_FRAMES);
+                        printf("\n[wakewordd] >>> АЛИСА ОБНАРУЖЕНА! (score: %.3f, батч: %d/%d, "
+                               "устойчиво: %d/%d, масса: %.2f) <<<\n",
+                               window_peak, batch_hits, BATCH_FRAMES,
+                               sustained_frames, HISTORY_FRAMES, net_mass);
                         fflush(stdout);
 
                         trigger_wake();
