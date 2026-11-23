@@ -1,13 +1,13 @@
 {
-  "version": "20261123.13",
-  "tag": "v20261123.13",
+  "version": "20261123.14",
+  "tag": "v20261123.14",
   "files": [
     {
       "dest": "/usr/bin/capsula-ota",
       "asset": "capsula-ota.sh",
       "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-ota.sh",
-      "sha256": "a8dd7dee18879f482b1c726d428b5821f97c8924fc9569ef3beb0e3b64b4f49a",
-      "size": 16216,
+      "sha256": "baf626f9a02ba66a18f3f602bdb2653ceaddf947f76568aa80c2dfc716c9948b",
+      "size": 16195,
       "mode": "755"
     },
     {
@@ -17,6 +17,14 @@
       "sha256": "25b17776a06d6da0e704baff35f465beb373bd57a7a081c5f8c818ba541ba0e2",
       "size": 1213,
       "mode": "755"
+    },
+    {
+      "dest": "/etc/capsula-ota.conf",
+      "asset": "capsula-ota.conf",
+      "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-ota.conf",
+      "sha256": "47027e004341039e22e8f93cd9b0b5edbf4fcd35c68e0dbe79d516620b2bc805",
+      "size": 807,
+      "mode": "644"
     },
     {
       "dest": "/etc/init.d/S50avahi-daemon",
