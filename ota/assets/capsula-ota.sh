@@ -135,7 +135,8 @@ download_to() {
     _out="$2"
     _i=1
     while [ "$_i" -le 3 ]; do
-        if wget -q -T 30 -O "$_out.new" "$_url" 2>>"$LOG_FILE"; then
+        # Do not pass -T: BusyBox wget on capsule 113 segfaults with it.
+        if wget -q -O "$_out.new" "$_url" 2>>"$LOG_FILE"; then
             mv -f "$_out.new" "$_out"
             return 0
         fi
