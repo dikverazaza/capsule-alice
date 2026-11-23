@@ -1,6 +1,6 @@
 {
-  "version": "20261123.10",
-  "tag": "v20261123.10",
+  "version": "20261123.11",
+  "tag": "v20261123.11",
   "files": [
     {
       "dest": "/usr/bin/capsula-ota",
@@ -70,8 +70,8 @@
       "dest": "/usr/bin/capsula-alice-launcher.sh",
       "asset": "capsula-alice-launcher.sh",
       "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-alice-launcher.sh",
-      "sha256": "da075b90737d47a7cc060beb6691e00f28603d198685cc00e3db6711845829f8",
-      "size": 3456,
+      "sha256": "97184e4c95300ef31fb78226fb93077bebf0ffcc4e9f1260d834c54b56e4c59a",
+      "size": 3670,
       "mode": "755"
     }
   ]
