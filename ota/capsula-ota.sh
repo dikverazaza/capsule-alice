@@ -347,7 +347,25 @@ do_check() {
         cp -f "$staged" "$dest.new" 2>/dev/null || { installed_ok=0; break; }
         chmod "$mode" "$dest.new" 2>/dev/null || { installed_ok=0; break; }
         sync
-        mv -f "$dest.new" "$dest" 2>/dev/null || { installed_ok=0; break; }
+        # A live executable can reject rename with ETXTBSY. Stop that service
+        # and retry instead of rolling back an otherwise verified update.
+        _mv_ok=0
+        _try=1
+        while [ "$_try" -le 5 ]; do
+            if mv -f "$dest.new" "$dest" 2>/dev/null; then
+                _mv_ok=1
+                break
+            fi
+            case "$dest" in
+                /usr/bin/capsula-alice) killall -9 capsula-alice 2>/dev/null ;;
+                /usr/bin/wakewordd) killall -9 wakewordd 2>/dev/null ;;
+                /usr/bin/capsula-yandex) killall -9 capsula-yandex 2>/dev/null ;;
+                /usr/bin/ring_daemon) killall -9 ring_daemon 2>/dev/null ;;
+            esac
+            sleep 1
+            _try=$((_try + 1))
+        done
+        [ "$_mv_ok" = "1" ] || { installed_ok=0; break; }
         log "Installed $dest"
     done < "$WORK/files.list"
 
