@@ -1,9 +1,9 @@
 {
-  "tag": "v20261123.09",
-  "version": "20261123.09",
-  "name": "Capsule Alice OTA 2026-11-23.09",
+  "tag": "v20261123.10",
+  "version": "20261123.10",
+  "name": "Capsule Alice OTA 2026-11-23.10",
   "asset_url_base": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets",
-  "body": "Pre-duck music while the user is speaking.\n\n- music drops to 25% as soon as speech starts, before wake-word detection\n- full 10% duck on any activation, barge-in or dialogue continuation\n- one background applier replaces many one-shot pactl shells\n- includes radio, wake-word and OTA fixes from 20261123.08",
+  "body": "Faster stop command and OTA on the second capsule.\n\n- short commands end after 500 ms of silence instead of 900 ms\n- 'Алиса, стоп' matches punctuation and common ASR misspellings\n- OTA snapshots move to tmpfs when /data is nearly full (capsule 113)\n- launcher uses a lock so S50 and S97 cannot start two supervisors\n- second capsule keeps its factory hostname; Bluetooth setup stays enabled\n- includes radio, wake-word, pre-duck and periodic OTA fixes",
   "files": [
     {
       "dest": "/usr/bin/capsula-ota",
