@@ -2445,8 +2445,11 @@ fi
                                 silence_chunks = 0;
                             } else {
                                 silence_chunks += 1;
-                                // VAD: 900 мс паузы = конец фразы, минимум 300 мс речи
-                                if silence_chunks >= 45 && command_chunks.len() >= 15 {
+                                // Короткие команды («Алиса, стоп») должны завершаться
+                                // быстро: 500 мс паузы. Длинные фразы сохраняют 900 мс,
+                                // чтобы не резать паузы внутри речи.
+                                let tail_chunks = if command_chunks.len() < 100 { 25 } else { 45 };
+                                if silence_chunks >= tail_chunks && command_chunks.len() >= 12 {
                                     println!("[*] VAD: Конец фразы зафиксирован по паузе ({} чанков, ~{:.1}с).", command_chunks.len(), (command_chunks.len() as f32) * 0.02);
                                     println!("[Latency] VAD: {} ms после активации", t_record_start.elapsed().as_millis());
                                     heard_speech = true;
@@ -2658,6 +2661,33 @@ fn is_boris_or_false_wake(text: &str) -> bool {
     }
 
     false
+}
+
+/// Надёжное распознавание команд остановки. ASR часто выдаёт «стоп.»,
+/// «стоп!», «алиса стоп», «хватит уже» — старое точное сравнение это
+/// пропускало, и фраза уходила в облачный Vins вместо локального stop.
+fn is_stop_command(text: &str) -> bool {
+    let lower = text.trim().to_lowercase().replace('ё', "е");
+    let words: Vec<String> = lower
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(|w| w.to_string())
+        .collect();
+    if words.is_empty() || words.len() > 4 {
+        return false;
+    }
+    let stop_words = ["стоп", "молчи", "замолчи", "тихо", "отмена", "хватит", "стопить"];
+    words.iter().any(|w| {
+        if stop_words.contains(&w.as_str()) {
+            return true;
+        }
+        // Опечатки ASR: «стопп», «стоооп», «хва тит» не должны ломать stop.
+        let len = w.chars().count();
+        (4..=8).contains(&len)
+            && stop_words
+                .iter()
+                .any(|s| levenshtein(w, s) <= 1)
+    })
 }
 
 fn clean_alice_prompt(raw: &str) -> String {
@@ -2928,7 +2958,7 @@ async fn execute_command(
     }
 
     // 1. Voice Mute ("молчи", "замолчи", "тихо", "стоп", "хватит", "отмена")
-    if cmd == "молчи" || cmd == "замолчи" || cmd == "тихо" || cmd == "стоп" || cmd == "отмена" || cmd == "хватит" {
+    if is_stop_command(&cmd) {
         println!("[Audio] Команда остановки речи и звука.");
         stop_speech();
         send_music_cmd("pause");
