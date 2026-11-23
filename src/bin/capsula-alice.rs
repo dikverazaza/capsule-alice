@@ -18,7 +18,7 @@ use std::{
     path::Path,
     process::{Command, Stdio},
     sync::{
-        atomic::{AtomicBool, AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
         Arc,
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -48,6 +48,33 @@ const WAKE_TRIGGER_FILE: &str = "/tmp/wakeword.trigger";
 // --- Local Features State (Timers, Alarms, Bluetooth, Whisper) ---
 static WHISPER_MODE: AtomicBool = AtomicBool::new(false);
 static BLUETOOTH_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+// Явное обращение «Алиса» без команды. Раньше сюда всегда уходил фиксированный
+// запрос «Привет» в Vins, который почти всегда возвращал одну и ту же фразу.
+// Короткие ответы идут сразу в TTS: быстро и без зацикливания диалогового движка.
+const WAKE_REPLIES: &[&str] = &[
+    "Да?",
+    "Слушаю",
+    "Я тут",
+    "На связи",
+    "Привет!",
+    "Я здесь",
+    "Говори",
+    "Что случилось?",
+    "Да, я",
+    "Слушаю вас",
+];
+static LAST_WAKE_REPLY_IDX: AtomicUsize = AtomicUsize::new(usize::MAX);
+
+fn pick_wake_reply() -> &'static str {
+    let mut idx = (rand::thread_rng().next_u32() as usize) % WAKE_REPLIES.len();
+    let last = LAST_WAKE_REPLY_IDX.load(Ordering::Relaxed);
+    if idx == last {
+        idx = (idx + 1) % WAKE_REPLIES.len();
+    }
+    LAST_WAKE_REPLY_IDX.store(idx, Ordering::Relaxed);
+    WAKE_REPLIES[idx]
+}
 
 #[derive(Clone)]
 struct ActiveTimer {
@@ -2489,12 +2516,11 @@ fi
 
                     if cmd.is_empty() || (is_noise_word && !is_alice_wake(&raw_text)) {
                         if !is_noise_word && is_alice_wake(&raw_text) {
-                            println!("[Alice] Обращение «Алиса» без команды. Отвечаем через Vins и ждём продолжения...");
-                            speak_dynamic_reply(
-                                "Привет",
-                                "Слушаю вас",
+                            let wake_reply = pick_wake_reply();
+                            println!("[Alice] Обращение «Алиса» без команды. Локальный ответ «{}», ждём продолжения...", wake_reply);
+                            speak_text(
+                                wake_reply,
                                 &uniproxy,
-                                vins_ws,
                                 &mut speech_end_time,
                                 &mut state,
                             ).await;
