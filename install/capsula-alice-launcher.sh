@@ -50,9 +50,14 @@ if [ -n "$PULSE_SOCK" ]; then
     export PULSE_SERVER="unix:$PULSE_SOCK"
 fi
 
-# Keep the current mute state and cap volume low at night. Boost the microphone.
+# Never raise the speaker volume. Only cap it when it is already above 20%.
+# The user may be asleep when OTA restarts services.
+_vol=$(pactl get-sink-volume master 2>/dev/null | grep -o '[0-9]*%' | head -n 1 | tr -d '%')
+case "$_vol" in
+    ''|*[!0-9]*) ;;
+    *) [ "$_vol" -gt 20 ] && pactl set-sink-volume master 20% 2>/dev/null ;;
+esac
 # speex mic at 100% required shouting; 250% saturated the noise floor. 150% is the balance.
-pactl set-sink-volume master 20% 2>/dev/null
 pactl set-source-mute speex 0 2>/dev/null
 pactl set-source-volume speex 150% 2>/dev/null
 
