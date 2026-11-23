@@ -24,7 +24,17 @@ ASSET_PREFIX="${CAPSULA_OTA_ASSET_PREFIX:-https://raw.githubusercontent.com/dikv
 OTA_HOME="${CAPSULA_OTA_HOME:-/data/ota}"
 # Staging lives in tmpfs: /data on the capsule is only ~63 MB and is often full.
 WORK="/tmp/capsula-ota-work"
-BACKUP="$OTA_HOME/backup"
+# 113 has /data almost full. Keep snapshots on /data when there is room,
+# otherwise use tmpfs so updates still install. Rollback across reboot is
+# then unavailable, but the signed manifest is always re-downloadable.
+BACKUP="${CAPSULA_OTA_BACKUP_HOME:-$OTA_HOME/backup}"
+if [ -z "${CAPSULA_OTA_BACKUP_HOME:-}" ]; then
+    _ota_avail=$(df -Pk "$OTA_HOME" 2>/dev/null | tail -n 1 | tr -s ' ' | cut -d ' ' -f 4)
+    case "$_ota_avail" in
+        ''|*[!0-9]*) ;;
+        *) [ "$_ota_avail" -lt 12000 ] && BACKUP="/tmp/capsula-ota-backup" ;;
+    esac
+fi
 CONF="${CAPSULA_OTA_CONF:-/etc/capsula-ota.conf}"
 LOG_FILE="/tmp/capsula-ota.log"
 PERSISTENT_LOG="$OTA_HOME/ota.log"
@@ -259,6 +269,7 @@ do_check() {
 
     acquire_lock
     date '+%Y-%m-%d %H:%M:%S' > "$LAST_CHECK_FILE" 2>/dev/null
+    log "Backup location: $BACKUP"
 
     MANIFEST_FILE="$WORK/manifest.txt"
     download_to "$MANIFEST_URL" "$MANIFEST_FILE" || die "cannot download manifest from $MANIFEST_URL"
