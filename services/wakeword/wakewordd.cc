@@ -26,8 +26,12 @@
 #define RING_FIFO "/tmp/ring.fifo"
 #define TRIGGER_FILE "/tmp/wakeword.trigger"
 #define ALICE_BUSY_FILE "/tmp/alice_busy"
-#define ACTIVATION_THRESHOLD 0.400f // Бытовая речь даёт 0.30–0.38; чёткий «Алиса» уверенно выше 0.4
+#define ACTIVATION_THRESHOLD 0.520f // Ложные срабатывания давали 0.382–0.449; чёткий «Алиса» выше 0.5
+#define SUSTAINED_THRESHOLD 0.380f  // Posterior должен держаться выше этого уровня
 #define PREAMP_GAIN 10.0f           // Бинарный патч: усиление Speex для модели
+#define HISTORY_FRAMES 24           // 24 шага по 10 мс = 240 мс истории
+#define MIN_SUSTAINED_FRAMES 8      // Не менее 80 мс уверенного постерона в окне
+#define TRIGGER_COOLDOWN_SEC 2
 
 static std::string get_parec_cmd() {
     glob_t glob_res;
@@ -52,6 +56,14 @@ static uint8_t tensor_arena[kTensorArenaSize];
 // Mel filterbank weights
 static float mel_filters[NUM_MEL_BINS][FFT_SIZE / 2 + 1];
 static float hamming_window[FRAME_SIZE];
+
+static float g_prob_history[HISTORY_FRAMES] = {0.0f};
+static int g_hist_head = 0;
+
+static void reset_wake_history() {
+    memset(g_prob_history, 0, sizeof(g_prob_history));
+    g_hist_head = 0;
+}
 
 static float cos_table[FFT_SIZE / 2];
 static float sin_table[FFT_SIZE / 2];
@@ -224,7 +236,9 @@ int main(int argc, char **argv) {
 
     printf("[wakewordd] Запуск оффлайн-детектора Алисы (TFLite Micro)...\n");
     printf("[wakewordd] Загрузка модели из: %s\n", model_path);
-    printf("[wakewordd] Порог: %.3f, подтверждений: 3, cooldown: 2 c\n", ACTIVATION_THRESHOLD);
+    printf("[wakewordd] Порог: %.3f, удержание: %.3f, история: %d/%d кадров, cooldown: %d c\n",
+           ACTIVATION_THRESHOLD, SUSTAINED_THRESHOLD, MIN_SUSTAINED_FRAMES,
+           HISTORY_FRAMES, TRIGGER_COOLDOWN_SEC);
     fflush(stdout);
 
     FILE *mf = fopen(model_path, "rb");
@@ -317,6 +331,7 @@ int main(int argc, char **argv) {
                     memset(in_state->data.int8, 0, in_state->bytes);
                 }
                 memset(sample_window, 0, sizeof(sample_window));
+                reset_wake_history();
                 batch_idx = 0;
                 last_trigger_time = time(NULL);
                 continue;
@@ -342,22 +357,29 @@ int main(int argc, char **argv) {
                     // Read logits: [1, 1, 6, 2]
                     TfLiteTensor *logits = interpreter.output(0);
                     float *l_data = logits->data.f;
-                    float peak_p = 0.0f;
-
-                    int sustained_frames = 0;
+                    // Softmax over the two class logits for every 10 ms step.
+                    // Keep a rolling history so short loud false hits cannot wake.
                     for (int step = 0; step < BATCH_FRAMES; step++) {
                         float f_logit = l_data[step * 2 + 0];
                         float a_logit = l_data[step * 2 + 1];
                         float max_l = f_logit > a_logit ? f_logit : a_logit;
                         float p_alisa = expf(a_logit - max_l) / (expf(f_logit - max_l) + expf(a_logit - max_l));
-                        if (p_alisa > peak_p) peak_p = p_alisa;
-                        if (p_alisa >= 0.30f) sustained_frames++;
+                        g_prob_history[g_hist_head] = p_alisa;
+                        g_hist_head = (g_hist_head + 1) % HISTORY_FRAMES;
+                    }
+
+                    float window_peak = 0.0f;
+                    int sustained_frames = 0;
+                    for (int i = 0; i < HISTORY_FRAMES; i++) {
+                        float p = g_prob_history[i];
+                        if (p > window_peak) window_peak = p;
+                        if (p >= SUSTAINED_THRESHOLD) sustained_frames++;
                     }
 
                     time_t now = time(NULL);
                     static time_t last_log = 0;
                     static float window_max_score = 0.0f;
-                    if (peak_p > window_max_score) window_max_score = peak_p;
+                    if (window_peak > window_max_score) window_max_score = window_peak;
                     if (now - last_log >= 5) {
                         last_log = now;
                         printf("[wakewordd] Слушаю микрофон... (пик за 5с: %.4f)\n", window_max_score);
@@ -365,19 +387,23 @@ int main(int argc, char **argv) {
                         window_max_score = 0.0f;
                     }
 
-                    if (peak_p >= ACTIVATION_THRESHOLD && sustained_frames >= 3 && (now - last_trigger_time >= 2)) {
+                    if (window_peak >= ACTIVATION_THRESHOLD &&
+                        sustained_frames >= MIN_SUSTAINED_FRAMES &&
+                        (now - last_trigger_time >= TRIGGER_COOLDOWN_SEC)) {
                         last_trigger_time = now;
-                        printf("\n[wakewordd] >>> АЛИСА ОБНАРУЖЕНА! (score: %.3f) <<<\n", peak_p);
+                        printf("\n[wakewordd] >>> АЛИСА ОБНАРУЖЕНА! (score: %.3f, удержание: %d/%d) <<<\n",
+                               window_peak, sustained_frames, HISTORY_FRAMES);
                         fflush(stdout);
 
                         trigger_wake();
 
-                        // Reset states and sample window after wake
+                        // Reset states, sample window and decision history after wake
                         for (int s = 1; s <= 9; s++) {
                             TfLiteTensor *in_state = interpreter.input(s);
                             memset(in_state->data.int8, 0, in_state->bytes);
                         }
                         memset(sample_window, 0, sizeof(sample_window));
+                        reset_wake_history();
                     }
                 }
 
