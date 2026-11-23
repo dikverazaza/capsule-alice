@@ -1,10 +1,10 @@
 V|1
-VERSION|20261123.16
+VERSION|20261123.17
 FILE|/usr/bin/capsula-ota|capsula-ota.sh|https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-ota.sh|baf626f9a02ba66a18f3f602bdb2653ceaddf947f76568aa80c2dfc716c9948b|16195|755
 FILE|/etc/init.d/S98capsula-ota|S98capsula-ota|https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/S98capsula-ota|25b17776a06d6da0e704baff35f465beb373bd57a7a081c5f8c818ba541ba0e2|1213|755
 FILE|/etc/capsula-ota.conf|capsula-ota.conf|https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-ota.conf|47027e004341039e22e8f93cd9b0b5edbf4fcd35c68e0dbe79d516620b2bc805|807|644
 FILE|/etc/init.d/S50avahi-daemon|S50avahi-daemon|https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/S50avahi-daemon|c0c60545f7bb158ff3c82c06a1e80b983f6b684027f89d1e353562df9134fa55|1537|755
-FILE|/usr/bin/capsula-alice|capsula-alice|https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-alice|5e4be7af14a09b874bca4b247874be669d045ec9799562177a298a1ee6be87e8|2219984|755
+FILE|/usr/bin/capsula-alice|capsula-alice|https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-alice|623a950e4d75c97d80a80784619f8aab904b2284423ff23c873d94a726c00c3e|2222600|755
 FILE|/usr/bin/ring_daemon|ring_daemon|https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/ring_daemon|4b872060b9cac225fff013d34cf2f61bf3473e7b52fd574764bf47d669929bee|1773224|755
 FILE|/usr/bin/wakewordd|wakewordd|https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/wakewordd|f7515efbd859d72e34fec20edd6a6b3d80b30eb921167d933ccdfe161aa5f3a9|7899040|755
 FILE|/usr/bin/capsula-audio|capsula-audio|https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-audio|65c344a9f24116af4f610b7ec22675b5da9a75e1cb46706d6afec130925b4f71|2301824|755
