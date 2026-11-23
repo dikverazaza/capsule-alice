@@ -1,13 +1,13 @@
 {
-  "version": "20261123.09",
-  "tag": "v20261123.09",
+  "version": "20261123.10",
+  "tag": "v20261123.10",
   "files": [
     {
       "dest": "/usr/bin/capsula-ota",
       "asset": "capsula-ota.sh",
       "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-ota.sh",
-      "sha256": "84c000b3f3a4e09ad4916586e213727a91099f61f5da527fc02f6b60b38602cb",
-      "size": 15393,
+      "sha256": "85834307c6709ebd984b731e318346ba0ee78bd0d054210828c008af2b89538a",
+      "size": 15952,
       "mode": "755"
     },
     {
@@ -22,16 +22,16 @@
       "dest": "/etc/init.d/S50avahi-daemon",
       "asset": "S50avahi-daemon",
       "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/S50avahi-daemon",
-      "sha256": "3224e702b479895d761be78650de6b100f45ae44f619a7fa548fbf64ecb850eb",
-      "size": 1433,
+      "sha256": "c0c60545f7bb158ff3c82c06a1e80b983f6b684027f89d1e353562df9134fa55",
+      "size": 1537,
       "mode": "755"
     },
     {
       "dest": "/usr/bin/capsula-alice",
       "asset": "capsula-alice",
       "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-alice",
-      "sha256": "2fdfc342a5da1725cba79773e1c536d7b329759052edaf96558cbe76c0bbc3ab",
-      "size": 2219136,
+      "sha256": "5892df150a45015a1a4ab6e5928abee7bf40beedc480bc078ba56a51f2a938e4",
+      "size": 2220096,
       "mode": "755"
     },
     {
@@ -70,8 +70,8 @@
       "dest": "/usr/bin/capsula-alice-launcher.sh",
       "asset": "capsula-alice-launcher.sh",
       "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-alice-launcher.sh",
-      "sha256": "85fec880b6431008524b2e78ff887f8cbb2ce73853ce3c41fa37890a38b20952",
-      "size": 2782,
+      "sha256": "da075b90737d47a7cc060beb6691e00f28603d198685cc00e3db6711845829f8",
+      "size": 3456,
       "mode": "755"
     }
   ]
