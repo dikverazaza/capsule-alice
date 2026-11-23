@@ -22,10 +22,10 @@ stop_ota() {
 
 case "$1" in
     start)
-        hostname alice 2>/dev/null
-        echo alice > /etc/hostname 2>/dev/null
         killall -9 avahi-daemon 2>/dev/null
         $DAEMON --no-drop-root -D
+        # 113 uses a separate Bluetooth SPP setup channel. Start it when present.
+        [ -x /etc/init.d/S98capsule-bt-setup ] && /etc/init.d/S98capsule-bt-setup start >/dev/null 2>&1
         # Boot trigger for the Alice stack. avahi starts early and is sourced
         # by rcS, unlike the later S99 scripts which were skipped on this build.
         if ! pgrep -a capsula-alice >/dev/null 2>&1; then
