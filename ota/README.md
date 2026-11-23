@@ -9,7 +9,7 @@ The capsule's BusyBox `wget` can reach `raw.githubusercontent.com` but cannot co
 1. `/usr/bin/capsula-ota check` downloads `https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/manifest.txt`.
 2. The manifest lists version, destination path, raw asset URL, SHA-256, size and mode for each file.
 3. Files whose installed SHA-256 already matches the manifest are skipped. Changed assets are downloaded to `/tmp/capsula-ota-work` (tmpfs), then size and SHA-256 are checked **before** any installed file is touched.
-4. Existing files are copied to `/data/ota/backup/<old-version>`.
+4. Existing files are copied to `/data/ota/backup/<old-version>`. When `/data` has less than 12 MB free, snapshots move to `/tmp/capsula-ota-backup`.
 5. New files are written as `<dest>.new`, `chmod`-ed, `sync`-ed and atomically `mv`-ed into place.
 6. On any install failure, the backup is restored automatically.
 7. If service binaries changed, the Alice launcher is restarted quietly. It does **not** unmute the speaker and caps volume at 20%.
@@ -28,6 +28,8 @@ The updater only accepts a fixed whitelist of destinations:
 /usr/bin/ring_daemon
 /usr/bin/capsule_onboarding
 /etc/init.d/S98capsula-ota
+/etc/init.d/S50avahi-daemon
+/etc/capsula-ota.conf
 ```
 
 Asset URLs must point to `https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/...`.
@@ -56,6 +58,8 @@ QUIET_START=23
 QUIET_END=7
 OTA_INTERVAL=600
 OTA_RETRY_INTERVAL=60
+# OTA_HOME=/data/ota
+# CAPSULA_OTA_BACKUP_HOME=/data/ota/backup
 # CAPSULA_OTA_BASE_URL=https://example.com/ota
 # CAPSULA_OTA_MANIFEST_URL=https://example.com/custom/manifest.txt
 # CAPSULA_OTA_ASSET_PREFIX=https://example.com/ota/assets/
