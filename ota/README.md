@@ -13,7 +13,7 @@ The capsule's BusyBox `wget` can reach `raw.githubusercontent.com` but cannot co
 5. New files are written as `<dest>.new`, `chmod`-ed, `sync`-ed and atomically `mv`-ed into place.
 6. On any install failure, the backup is restored automatically.
 7. If service binaries changed, the Alice launcher is restarted quietly. It does **not** unmute the speaker and caps volume at 20%.
-8. During quiet hours (23:00–07:00 by default) the restart is deferred to the next check outside that window.
+8. Restart is applied in the same OTA run. The client re-reads the config after install, so a new `DEFER_RESTART_AT_NIGHT=0` takes effect immediately. Quiet hours are disabled by default; set `DEFER_RESTART_AT_NIGHT=1` only if restart deferral is explicitly needed.
 
 The updater only accepts a fixed whitelist of destinations:
 
@@ -53,7 +53,7 @@ Optional local configuration in `/etc/capsula-ota.conf`:
 ```sh
 ENABLED=1
 RESTART_SERVICES=1
-DEFER_RESTART_AT_NIGHT=1
+DEFER_RESTART_AT_NIGHT=0
 QUIET_START=23
 QUIET_END=7
 OTA_INTERVAL=600

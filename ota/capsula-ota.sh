@@ -22,7 +22,7 @@ set -u
 CONF="${CAPSULA_OTA_CONF:-/etc/capsula-ota.conf}"
 ENABLED=1
 RESTART_SERVICES=1
-DEFER_RESTART_AT_NIGHT=1
+DEFER_RESTART_AT_NIGHT=0
 QUIET_START=23
 QUIET_END=7
 OTA_INTERVAL=600
@@ -381,6 +381,10 @@ do_check() {
     set_result "updated $new_version"
     log "OTA update completed: $new_version"
 
+    # The update may have replaced the config file. Apply its restart policy now,
+    # not on the next 10-minute check.
+    [ -f "$CONF" ] && . "$CONF"
+    PENDING_RESTART="$OTA_HOME/restart_pending"
     if [ "$need_restart" = "1" ]; then
         restart_services
     fi
