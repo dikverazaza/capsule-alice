@@ -1957,8 +1957,9 @@ fi
     println!("[Daemon] Голосовой сервис активен. Слушаю «Алиса» или касание панели!\n");
     spawn_music_volume_applier();
 
-    // 25 чанков = 500 мс: «Алиса привет» не должен терять начало «привет».
-    let mut audio_pre_buffer: VecDeque<Vec<u8>> = VecDeque::with_capacity(25);
+    // 60 чанков = 1.2 с. Этого хватает, чтобы «Алиса, стоп», сказанная
+    // одним дыханием, целиком попала в ASR даже при позднем wake-word триггере.
+    let mut audio_pre_buffer: VecDeque<Vec<u8>> = VecDeque::with_capacity(60);
     // Аудио до детекции wake word: «Алиса привет» должно не терять «привет».
     let mut pending_seed: Vec<Vec<u8>> = Vec::new();
     let mut noise_floor = 120.0f32;
@@ -2068,7 +2069,7 @@ fi
             }
         }
 
-        if audio_pre_buffer.len() >= 25 {
+        if audio_pre_buffer.len() >= 60 {
             audio_pre_buffer.pop_front();
         }
         audio_pre_buffer.push_back(chunk_buf.clone());
@@ -2222,13 +2223,15 @@ fi
             let barge_threshold = (noise_floor * 1.25 + 36.0).max(280.0);
             let crest = peak / rms.max(1.0);
             let speech_has_tail = speech_end_time > Instant::now() + Duration::from_millis(800);
-            if speech_has_tail && rms > barge_threshold && crest < 8.0 {
+            // Шорох/клавиатура дают короткий всплеск с высоким crest.
+            // Прерывание разрешаем только на устойчивую речь: >=15 чанков (300 мс).
+            if speech_has_tail && rms > barge_threshold && crest < 4.5 {
                 barge_in_speech_chunks += 1;
             } else {
                 barge_in_speech_chunks = 0;
             }
 
-            let voice_barge = barge_in_speech_chunks >= 10; // ~200 мс уверенной речи
+            let voice_barge = barge_in_speech_chunks >= 15; // ~300 мс уверенной речи
             if touch_woke || local_wake || voice_barge {
                 if touch_woke {
                     println!("\n[!] ПРЕРЫВАНИЕ КАСАНИЕМ ПАНЕЛИ.");
@@ -2248,7 +2251,7 @@ fi
                 // Раньше эти чанки выбрасывались, и команда часто терялась.
                 let mut seed: VecDeque<Vec<u8>> = audio_pre_buffer.clone();
                 while let Ok(chunk) = pcm_rx.try_recv() {
-                    if seed.len() >= 25 {
+                    if seed.len() >= 60 {
                         seed.pop_front();
                     }
                     seed.push_back(chunk);
@@ -2301,11 +2304,11 @@ fi
 
             let followup_threshold = (noise_floor * 1.12 + 36.0).max(230.0);
             let crest = peak / rms.max(1.0);
-            // Клавиатура/стук дают короткий пик при низком среднем уровне.
-            // Речь держит_CREST не выше ~6–7; всё, что выше, — ударный шум.
-            if rms > followup_threshold && crest < 8.0 {
+            // Клавиатура/шорох дают короткий пик при низком среднем уровне.
+            // Речь держит crest ~2.5–3; требуем устойчивые 12 чанков (240 мс).
+            if rms > followup_threshold && crest < 4.5 {
                 followup_speech_chunks += 1;
-                if followup_speech_chunks >= 6 {
+                if followup_speech_chunks >= 12 {
                     followup_speech_chunks = 0;
                     println!("[!] Продолжение диалога: уверенная речь (RMS={:.0} > {:.0}, crest={:.1}).", rms, followup_threshold, crest);
                     duck_music();
@@ -2381,8 +2384,8 @@ fi
             });
 
             let mut command_chunks: Vec<Vec<u8>> = Vec::with_capacity(250);
-            if pending_seed.len() > 25 {
-                let drop_n = pending_seed.len() - 25;
+            if pending_seed.len() > 60 {
+                let drop_n = pending_seed.len() - 60;
                 pending_seed.drain(..drop_n);
             }
             let mut pre_chunks: VecDeque<Vec<u8>> = pending_seed.drain(..).collect();
@@ -2565,7 +2568,7 @@ fi
                 }
             }
             while let Ok(chunk) = pcm_rx.try_recv() {
-                if audio_pre_buffer.len() >= 25 {
+                if audio_pre_buffer.len() >= 60 {
                     audio_pre_buffer.pop_front();
                 }
                 audio_pre_buffer.push_back(chunk);
