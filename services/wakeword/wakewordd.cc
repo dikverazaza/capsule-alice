@@ -26,7 +26,7 @@
 #define RING_FIFO "/tmp/ring.fifo"
 #define TRIGGER_FILE "/tmp/wakeword.trigger"
 #define ALICE_BUSY_FILE "/tmp/alice_busy"
-#define ACTIVATION_THRESHOLD 0.340f // Возврат к проверенному порогу: слабая речь даёт 0.30–0.34, тишина <0.27
+#define ACTIVATION_THRESHOLD 0.400f // Бытовая речь даёт 0.30–0.38; чёткий «Алиса» уверенно выше 0.4
 #define PREAMP_GAIN 10.0f           // Бинарный патч: усиление Speex для модели
 
 static std::string get_parec_cmd() {
