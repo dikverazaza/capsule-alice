@@ -1,9 +1,9 @@
 {
-  "tag": "v20261123.15",
-  "version": "20261123.15",
-  "name": "Capsule Alice OTA 2026-11-23.15",
+  "tag": "v20261123.16",
+  "version": "20261123.16",
+  "name": "Capsule Alice OTA 2026-11-23.16",
   "asset_url_base": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets",
-  "body": "Catch 'стоп' after the wake word and ignore rustle.\n\n- prebuffer 500 ms -> 1.2 s so 'Алиса, стоп' reaches ASR whole\n- barge-in needs 300 ms of speech with crest < 4.5\n- follow-up trigger needs 240 ms of speech with crest < 4.5\n- user-controllable OTA config and stable 10-minute checks\n- 'стоп', 'выключи радио', 'стоп радио' kill the radio pipeline\n- includes radio, wake-word, pre-duck and periodic OTA fixes",
+  "body": "Stop responding to random speech.\n\n- wake threshold back to the proven 0.340 / sustained 0.300\n- barge-in only by 'Алиса' or panel touch\n- follow-up only by 'Алиса' or panel touch\n- no cloud ASR gating added\n- keeps 1.2 s prebuffer for 'Алиса, стоп' and the stable OTA daemon",
   "files": [
     {
       "dest": "/usr/bin/capsula-ota",
