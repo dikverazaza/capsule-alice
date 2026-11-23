@@ -1,6 +1,6 @@
 {
-  "version": "20261123.19",
-  "tag": "v20261123.19",
+  "version": "20261123.20",
+  "tag": "v20261123.20",
   "files": [
     {
       "dest": "/usr/bin/capsula-ota",
@@ -54,8 +54,8 @@
       "dest": "/usr/bin/wakewordd",
       "asset": "wakewordd",
       "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/wakewordd",
-      "sha256": "f7515efbd859d72e34fec20edd6a6b3d80b30eb921167d933ccdfe161aa5f3a9",
-      "size": 7899040,
+      "sha256": "79034d17cfa5381273adff2df0e5d853371d7feae982ded6d106b9193286f0d1",
+      "size": 7898104,
       "mode": "755"
     },
     {
