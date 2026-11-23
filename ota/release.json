@@ -1,9 +1,9 @@
 {
-  "tag": "v20261123.12",
-  "version": "20261123.12",
-  "name": "Capsule Alice OTA 2026-11-23.12",
+  "tag": "v20261123.13",
+  "version": "20261123.13",
+  "name": "Capsule Alice OTA 2026-11-23.13",
   "asset_url_base": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets",
-  "body": "Fix OTA download on capsule 113.\n\n- remove wget -T flag: this BusyBox build segfaults with it\n- launcher only caps volume above 20%, never raises it from 5%/0%\n- short commands end after 500 ms of silence instead of 900 ms\n- 'Алиса, стоп' matches punctuation and common ASR misspellings\n- OTA snapshots move to tmpfs when /data is nearly full\n- launcher uses a lock so S50 and S97 cannot start two supervisors\n- second capsule keeps its factory hostname; Bluetooth setup stays enabled\n- includes radio, wake-word, pre-duck and periodic OTA fixes",
+  "body": "Reliable radio off and more stable OTA status.\n\n- 'стоп', 'выключи радио', 'стоп радио' kill the capsula-audio|paplay radio pipeline\n- OTA status shows daemon lock PID and backup location\n- fix free-space parsing when choosing tmpfs snapshots\n- remove wget -T flag: BusyBox on capsule 113 segfaults with it\n- launcher only caps volume above 20%, never raises it from 5%/0%\n- short commands end after 500 ms of silence instead of 900 ms\n- 'Алиса, стоп' matches punctuation and common ASR misspellings\n- launcher uses a lock so S50 and S97 cannot start two supervisors\n- second capsule keeps its factory hostname; Bluetooth setup stays enabled\n- includes radio, wake-word, pre-duck and periodic OTA fixes",
   "files": [
     {
       "dest": "/usr/bin/capsula-ota",
