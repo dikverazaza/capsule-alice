@@ -28,8 +28,12 @@ WORK="/tmp/capsula-ota-work"
 # otherwise use tmpfs so updates still install. Rollback across reboot is
 # then unavailable, but the signed manifest is always re-downloadable.
 BACKUP="${CAPSULA_OTA_BACKUP_HOME:-$OTA_HOME/backup}"
+available_kb() {
+    set -- $(df -Pk "$1" 2>/dev/null | tail -n 1)
+    printf '%s\n' "${4:-0}"
+}
 if [ -z "${CAPSULA_OTA_BACKUP_HOME:-}" ]; then
-    _ota_avail=$(df -Pk "$OTA_HOME" 2>/dev/null | tail -n 1 | tr -s ' ' | cut -d ' ' -f 4)
+    _ota_avail=$(available_kb "$OTA_HOME")
     case "$_ota_avail" in
         ''|*[!0-9]*) ;;
         *) [ "$_ota_avail" -lt 12000 ] && BACKUP="/tmp/capsula-ota-backup" ;;
@@ -433,7 +437,9 @@ do_status() {
     last_result=$(cat "$LAST_RESULT_FILE" 2>/dev/null || printf 'never')
     last_check=$(cat "$LAST_CHECK_FILE" 2>/dev/null || printf 'never')
     daemon_pid=$(cat "$OTA_PID_FILE" 2>/dev/null || printf 'not running')
+    lock_pid=$(cat "$DAEMON_LOCK/pid" 2>/dev/null || printf 'none')
     printf 'daemon:    %s\n' "$daemon_pid"
+    printf 'lock:      %s\n' "$lock_pid"
     printf 'installed: %s\n' "$current_version"
     printf 'last:      %s\n' "$last_result"
     printf 'checked:   %s\n' "$last_check"
@@ -444,6 +450,7 @@ do_status() {
         printf 'restart:   not pending\n'
     fi
     printf 'manifest:  %s\n' "$MANIFEST_URL"
+    printf 'backup:    %s\n' "$BACKUP"
     [ -f "$LOG_FILE" ] && tail -n 15 "$LOG_FILE"
     return 0
 }
