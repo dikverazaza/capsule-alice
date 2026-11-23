@@ -669,6 +669,15 @@ fn send_music_cmd(cmd: &str) {
     }
 }
 
+/// Internet radio is a separate `capsula-audio | paplay` pipeline. The Yandex
+/// music FIFO `pause` does not touch it, which is why "стоп" left radio playing.
+fn stop_radio() {
+    let _ = Command::new("killall")
+        .args(["-9", "capsula-audio", "paplay"])
+        .status();
+    send_music_cmd("pause");
+}
+
 fn normalize_radio_name(s: &str) -> String {
     s.to_lowercase()
         .chars()
@@ -2957,11 +2966,27 @@ async fn execute_command(
         return;
     }
 
+    // 0. Radio off. Radio runs outside capsula-yandex, so it needs its own kill.
+    if cmd.contains("радио")
+        && (cmd.contains("выключ") || cmd.contains("останов") || cmd.contains("заглуш")
+            || cmd.contains("прекрат") || cmd.contains("стоп") || cmd.contains("хватит"))
+    {
+        println!("[Radio] Выключение радио по голосовой команде.");
+        stop_speech();
+        stop_radio();
+        unduck_music();
+        set_ring("off");
+        set_alice_busy(false);
+        let _ = std::fs::write(WAKE_TRIGGER_FILE, "");
+        *state = "WAITING_WAKEWORD";
+        return;
+    }
+
     // 1. Voice Mute ("молчи", "замолчи", "тихо", "стоп", "хватит", "отмена")
     if is_stop_command(&cmd) {
         println!("[Audio] Команда остановки речи и звука.");
         stop_speech();
-        send_music_cmd("pause");
+        stop_radio();
         unduck_music();
         set_ring("off");
         set_alice_busy(false);
@@ -2978,7 +3003,7 @@ async fn execute_command(
         || cmd.contains("заглуши") || cmd.contains("выруби") {
         println!("[Music] Остановка музыки.");
         stop_speech();
-        send_music_cmd("pause");
+        stop_radio();
         unduck_music();
         set_ring("off");
         set_alice_busy(false);
