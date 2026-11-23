@@ -1,9 +1,9 @@
 {
-  "tag": "v20261123.13",
-  "version": "20261123.13",
-  "name": "Capsule Alice OTA 2026-11-23.13",
+  "tag": "v20261123.14",
+  "version": "20261123.14",
+  "name": "Capsule Alice OTA 2026-11-23.14",
   "asset_url_base": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets",
-  "body": "Reliable radio off and more stable OTA status.\n\n- 'стоп', 'выключи радио', 'стоп радио' kill the capsula-audio|paplay radio pipeline\n- OTA status shows daemon lock PID and backup location\n- fix free-space parsing when choosing tmpfs snapshots\n- remove wget -T flag: BusyBox on capsule 113 segfaults with it\n- launcher only caps volume above 20%, never raises it from 5%/0%\n- short commands end after 500 ms of silence instead of 900 ms\n- 'Алиса, стоп' matches punctuation and common ASR misspellings\n- launcher uses a lock so S50 and S97 cannot start two supervisors\n- second capsule keeps its factory hostname; Bluetooth setup stays enabled\n- includes radio, wake-word, pre-duck and periodic OTA fixes",
+  "body": "User-controllable OTA configuration.\n\n- install /etc/capsula-ota.conf with documented defaults\n- config is sourced before paths are derived, so OTA_HOME/URLs can be overridden\n- 'стоп', 'выключи радио', 'стоп радио' kill the capsula-audio|paplay radio pipeline\n- OTA status shows daemon lock PID and backup location\n- fix free-space parsing when choosing tmpfs snapshots\n- remove wget -T flag: BusyBox on capsule 113 segfaults with it\n- launcher only caps volume above 20%, never raises it from 5%/0%\n- short commands end after 500 ms of silence instead of 900 ms\n- 'Алиса, стоп' matches punctuation and common ASR misspellings\n- launcher uses a lock so S50 and S97 cannot start two supervisors\n- second capsule keeps its factory hostname; Bluetooth setup stays enabled\n- includes radio, wake-word, pre-duck and periodic OTA fixes",
   "files": [
     {
       "dest": "/usr/bin/capsula-ota",
@@ -16,6 +16,12 @@
       "asset": "S98capsula-ota",
       "source": "ota/assets/S98capsula-ota",
       "mode": "755"
+    },
+    {
+      "dest": "/etc/capsula-ota.conf",
+      "asset": "capsula-ota.conf",
+      "source": "ota/assets/capsula-ota.conf",
+      "mode": "644"
     },
     {
       "dest": "/etc/init.d/S50avahi-daemon",
