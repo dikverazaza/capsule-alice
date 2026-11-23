@@ -1,0 +1,56 @@
+name: OTA release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: ${{ !contains(github.event.head_commit.message, '[skip ota]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-musl
+
+      - name: Install Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.17.0
+
+      - name: Install cargo-zigbuild
+        run: cargo install cargo-zigbuild --locked
+
+      - name: Build Alice
+        run: |
+          cargo zigbuild --release --target aarch64-unknown-linux-musl --bin capsula-alice
+          cp target/aarch64-unknown-linux-musl/release/capsula-alice ota/assets/capsula-alice
+
+      - name: Bump version
+        run: python3 -c 'import json,pathlib; p=pathlib.Path("ota/release.json"); c=json.loads(p.read_text()); d,n=c["version"].split("."); v=d+"."+str(int(n)+1); c["tag"]="v"+v; c["version"]=v; c["name"]="Capsule Alice OTA "+v; c["body"]="Automatic OTA release "+v+"\n\n- built from main by GitHub Actions\n- wakewordd binary is committed under ota/assets"; p.write_text(json.dumps(c,ensure_ascii=False,indent=2)+"\n")'
+
+      - name: Read version
+        id: version
+        run: echo "version=$(python3 -c 'import json;print(json.load(open("ota/release.json"))["version"])')" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release and manifests
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 ota/publish_release.py
+
+      - name: Commit generated files
+        run: |
+          git config user.name "ota-bot"
+          git config user.email "ota-bot@users.noreply.github.com"
+          git add ota/release.json ota/manifest.txt ota/manifest.json ota/assets/capsula-alice
+          git commit -m "[skip ota] release ${{ steps.version.outputs.version }}" || echo "nothing to commit"
+          git push origin HEAD:main
