@@ -1,9 +1,9 @@
 {
-  "tag": "v20261123.20",
-  "version": "20261123.20",
-  "name": "Capsule Alice OTA 20261123.20",
+  "tag": "v20261123.21",
+  "version": "20261123.21",
+  "name": "Capsule Alice OTA 20261123.21",
   "asset_url_base": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets",
-  "body": "Automatic OTA release 20261123.20\n\n- built from main by GitHub Actions\n- wakewordd binary is committed under ota/assets",
+  "body": "Automatic OTA release 20261123.21\n\n- built from main by GitHub Actions\n- wakewordd binary is committed under ota/assets",
   "files": [
     {
       "dest": "/usr/bin/capsula-ota",

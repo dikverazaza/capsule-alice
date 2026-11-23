@@ -1,6 +1,6 @@
 {
-  "version": "20261123.20",
-  "tag": "v20261123.20",
+  "version": "20261123.21",
+  "tag": "v20261123.21",
   "files": [
     {
       "dest": "/usr/bin/capsula-ota",
@@ -38,8 +38,8 @@
       "dest": "/usr/bin/capsula-alice",
       "asset": "capsula-alice",
       "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-alice",
-      "sha256": "623a950e4d75c97d80a80784619f8aab904b2284423ff23c873d94a726c00c3e",
-      "size": 2222600,
+      "sha256": "4863c0a46f03152bcd35634decec98b730efa9441ac1fe7162c523d5f6dd37e9",
+      "size": 2223432,
       "mode": "755"
     },
     {
@@ -54,8 +54,8 @@
       "dest": "/usr/bin/wakewordd",
       "asset": "wakewordd",
       "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/wakewordd",
-      "sha256": "79034d17cfa5381273adff2df0e5d853371d7feae982ded6d106b9193286f0d1",
-      "size": 7898104,
+      "sha256": "6ced6ca387596fba3c64ac4da4bf96f4c0b7bcd74b8ad15ee5a24b68b3146dc1",
+      "size": 7897600,
       "mode": "755"
     },
     {
