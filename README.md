@@ -13,7 +13,7 @@
 | **Речевой интерфейс** | Yandex Uniproxy (WebSocket) | `capsula-alice` (Rust) | ~2.1 МБ | ASR, TTS, Vins-диалог, сценарии, clock-оверлей |
 | **Аудиоплеер** | PulseAudio sink / HTTP stream | `capsula-yandex` (Rust) | ~2.9 МБ | «Моя волна», треклисты, потоковое воспроизведение |
 | **Радио-конвейер** | HTTP MP3 → raw PCM | `capsula-audio` + `paplay` | по требованию | Именованные радиостанции вне Yandex-очереди |
-| **Детектор активации** | 16 kHz PCM / TFLite Micro | `wakewordd` (C++) | ~1.9 МБ | Локальный споттер «Алиса», порог 0.300 |
+| **Детектор активации** | 16 kHz PCM / TFLite Micro | `wakewordd` (C++) | ~1.9 МБ | Локальный споттер «Алиса», порог 0.520 + история 24/8 |
 | **LED-кольцо** | AW9523B, I2C bus 1 | `ring_daemon` (C) | <1 МБ | 12-зонные состояния: listen / think / speak / mute |
 | **Экран часов** | LED-матрица IS31FL3236 + BH1730 | встроено в `capsula-alice` | в RSS выше | Цифровое время, автояркость по ALS |
 | **Микрофонный ключ** | Сенсорная кнопка mute | `capsule-mic` (sh) | — | Hardware mute capture + индикация кольца |
@@ -84,8 +84,8 @@ make -C services/ring_daemon
 make -C services/onboarding
 
 # wakewordd.cc в репозитории — синхронизированный источник параметров.
-# Готовый бинарник из ota/assets/wakewordd собран с TFLite Micro и
-# бинарно пропатчен на порог 0.300; использовать его как артефакт.
+# Готовый бинарник из ota/assets/wakewordd собран из этого источника с TFLite Micro:
+# порог 0.520, удержание 0.380, история 24 кадра, минимум 8 кадров.
 zig c++ -target aarch64-linux-musl -O2 \
   services/wakeword/wakewordd.cc -o wakewordd -lm
 ```
