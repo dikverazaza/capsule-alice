@@ -1,6 +1,6 @@
 {
-  "version": "20261123.24",
-  "tag": "v20261123.24",
+  "version": "20261123.25",
+  "tag": "v20261123.25",
   "files": [
     {
       "dest": "/usr/bin/capsula-ota",
@@ -38,8 +38,8 @@
       "dest": "/usr/bin/capsula-alice",
       "asset": "capsula-alice",
       "url": "https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-alice",
-      "sha256": "e9c616f2f3d53c290e9f7018612119aa08ee4bc0391ff43f77de5d89c524864e",
-      "size": 2233024,
+      "sha256": "b734fc84687771478dce262ba5afc4a367c9ffb53a398a9991c0496e2807c9c3",
+      "size": 2233088,
       "mode": "755"
     },
     {
