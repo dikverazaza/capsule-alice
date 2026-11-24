@@ -772,13 +772,15 @@ fn send_music_cmd(cmd: &str) {
     }
 }
 
-/// Internet radio is a separate `capsula-audio | paplay` pipeline. The Yandex
-/// music FIFO `pause` does not touch it, which is why "стоп" left radio playing.
+/// Stop every audio source. Internet radio is a separate `capsula-audio |
+/// paplay` pipeline, so it needs an explicit kill. The Yandex player must get
+/// `stop`, not `pause`: if its audio processes were already replaced, `pause`
+/// fails, the player marks the track as an error and advances to the next one.
 fn stop_radio() {
+    send_music_cmd("stop");
     let _ = Command::new("killall")
         .args(["-9", "capsula-audio", "paplay"])
         .status();
-    send_music_cmd("pause");
 }
 
 fn normalize_radio_name(s: &str) -> String {
