@@ -1,10 +1,10 @@
 V|1
-VERSION|20261123.25
-FILE|/usr/bin/capsula-ota|capsula-ota.sh|https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-ota.sh|f7f19dcd2e5b71e8e332f16ca5d1f40166fbd25e1602b32bb1d99d95f1ec8fd8|17138|755
+VERSION|20261123.26
+FILE|/usr/bin/capsula-ota|capsula-ota.sh|https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-ota.sh|6602fc614851d031c0c1b2bed4e65749687873d99c29c1c8296c8d6e53ed4b55|24897|755
 FILE|/etc/init.d/S98capsula-ota|S98capsula-ota|https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/S98capsula-ota|25b17776a06d6da0e704baff35f465beb373bd57a7a081c5f8c818ba541ba0e2|1213|755
 FILE|/etc/capsula-ota.conf|capsula-ota.conf|https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-ota.conf|9cd71c350b6d045626442390b0b1bd6ca91246231397026f12e91276e36a65b0|897|644
 FILE|/etc/init.d/S50avahi-daemon|S50avahi-daemon|https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/S50avahi-daemon|c0c60545f7bb158ff3c82c06a1e80b983f6b684027f89d1e353562df9134fa55|1537|755
-FILE|/usr/bin/capsula-alice|capsula-alice|https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-alice|4863c0a46f03152bcd35634decec98b730efa9441ac1fe7162c523d5f6dd37e9|2223432|755
+FILE|/usr/bin/capsula-alice|capsula-alice|https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-alice|815eaf229321394beb938f6e11cef114b451bbfdd883be3d0c7b514a3c74e662|2233088|755
 FILE|/usr/bin/ring_daemon|ring_daemon|https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/ring_daemon|4b872060b9cac225fff013d34cf2f61bf3473e7b52fd574764bf47d669929bee|1773224|755
 FILE|/usr/bin/wakewordd|wakewordd|https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/wakewordd|6ced6ca387596fba3c64ac4da4bf96f4c0b7bcd74b8ad15ee5a24b68b3146dc1|7897600|755
 FILE|/usr/bin/capsula-audio|capsula-audio|https://raw.githubusercontent.com/dikverazaza/capsule-alice/main/ota/assets/capsula-audio|65c344a9f24116af4f610b7ec22675b5da9a75e1cb46706d6afec130925b4f71|2301824|755
