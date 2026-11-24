@@ -17,6 +17,16 @@
 
 set -u
 
+# Self-test must be side-effect-free: the normal startup below deletes $WORK,
+# which would remove the staged update currently being verified.
+if [ "${1:-}" = "selftest" ]; then
+    # Only check prerequisites of the updater itself. Host utilities used by
+    # health-check/preflight are optional on a development machine.
+    command -v wget >/dev/null 2>&1 && \
+    command -v sha256sum >/dev/null 2>&1 || exit 1
+    exit 0
+fi
+
 # Safe defaults. /etc/capsula-ota.conf is read BEFORE any path is derived,
 # so a user can override OTA_HOME, URLs, intervals and backup location.
 CONF="${CAPSULA_OTA_CONF:-/etc/capsula-ota.conf}"
@@ -195,6 +205,66 @@ restart_services() {
     rm -f "$PENDING_RESTART" 2>/dev/null
 }
 
+prune_old_snapshots() {
+    _keep="$1"
+    [ -d "$BACKUP" ] || return 0
+    # Keep only the two newest dated snapshots: current plus one rollback.
+    # A full set of binaries is ~17 MB; five copies would eat all tmpfs RAM.
+    ls -1d "$BACKUP"/202* 2>/dev/null | sort -V -r | tail -n +3 | while read -r _old; do
+        [ -d "$_old" ] || continue
+        [ "$_old" = "$_keep" ] && continue
+        case "$(basename "$_old")" in
+            manual-*) continue ;;
+        esac
+        log "Pruning old snapshot: $(basename "$_old")"
+        rm -rf "$_old"
+    done
+}
+
+health_check_services() {
+    # The launcher is a one-shot starter. First wait until it actually creates
+    # its lock; otherwise we could sample the OLD processes before they are
+    # killed and accept a dead new stack as healthy.
+    _t=0
+    while [ ! -d /var/run/capsula-alice-launcher.lock ] && [ "$_t" -lt 10 ]; do
+        sleep 1
+        _t=$((_t + 1))
+    done
+    if [ ! -d /var/run/capsula-alice-launcher.lock ]; then
+        log "Health check FAILED: launcher did not start."
+        return 1
+    fi
+    # The launcher removes the lock when it has finished starting the stack.
+    _t=0
+    while [ -d /var/run/capsula-alice-launcher.lock ] && [ "$_t" -lt 15 ]; do
+        sleep 1
+        _t=$((_t + 1))
+    done
+    _t=0
+    while [ "$_t" -lt 30 ]; do
+        p1_alice=$(pidof -s capsula-alice 2>/dev/null || printf '')
+        p1_wake=$(pidof -s wakewordd 2>/dev/null || printf '')
+        p1_ring=$(pidof -s ring_daemon 2>/dev/null || printf '')
+        if [ -n "$p1_alice" ] && [ -n "$p1_wake" ] && [ -n "$p1_ring" ]; then
+            p1="${p1_alice}:${p1_wake}:${p1_ring}"
+            sleep 5
+            p2_alice=$(pidof -s capsula-alice 2>/dev/null || printf '')
+            p2_wake=$(pidof -s wakewordd 2>/dev/null || printf '')
+            p2_ring=$(pidof -s ring_daemon 2>/dev/null || printf '')
+            p2="${p2_alice}:${p2_wake}:${p2_ring}"
+            if [ "$p1" = "$p2" ]; then
+                log "Health check passed: alice/wakewordd/ring_daemon stable ($p1)."
+                return 0
+            fi
+            log "PID instability detected: $p1 -> $p2"
+        fi
+        sleep 2
+        _t=$((_t + 2))
+    done
+    log "Health check FAILED: voice stack did not stay alive."
+    return 1
+}
+
 flush_pending_restart() {
     [ -f "$PENDING_RESTART" ] || return 0
     if is_quiet_hour; then
@@ -205,18 +275,67 @@ flush_pending_restart() {
     restart_services
 }
 
+atomic_replace_file() {
+    _src="$1"
+    _dest="$2"
+    _mode="${3:-755}"
+    cp -f "$_src" "$_dest.new" 2>/dev/null || return 1
+    chmod "$_mode" "$_dest.new" 2>/dev/null || {
+        rm -f "$_dest.new" 2>/dev/null
+        return 1
+    }
+    sync
+    _try=1
+    while [ "$_try" -le 5 ]; do
+        if mv -f "$_dest.new" "$_dest" 2>/dev/null; then
+            return 0
+        fi
+        # A live executable can reject rename with ETXTBSY. Kill the owner,
+        # let the launcher notice the exit, then retry with the same inode.
+        case "$_dest" in
+            /usr/bin/capsula-alice) killall -9 capsula-alice 2>/dev/null ;;
+            /usr/bin/wakewordd) killall -9 wakewordd 2>/dev/null ;;
+            /usr/bin/capsula-yandex) killall -9 capsula-yandex 2>/dev/null ;;
+            /usr/bin/ring_daemon) killall -9 ring_daemon 2>/dev/null ;;
+        esac
+        sleep 1
+        _try=$((_try + 1))
+    done
+    rm -f "$_dest.new" 2>/dev/null
+    return 1
+}
+
 restore_snapshot() {
     _snap="$1"
     [ -f "$_snap/files.list" ] || return 1
+    # The launcher would resurrect killed services and recreate ETXTBSY.
+    # Its lock is a directory, so rm -f is not enough.
+    killall -9 capsula-alice-launcher.sh 2>/dev/null
+    rm -rf /var/run/capsula-alice-launcher.lock 2>/dev/null
+    killall -9 capsula-alice wakewordd capsula-yandex ring_daemon 2>/dev/null
+    _rollback_ok=1
     while IFS='|' read -r _dest _mode; do
         [ -n "$_dest" ] || continue
+        # Never roll back the updater or its restart policy: a stale client
+        # can cut OTA forever, and a stale config can re-enable quiet hours.
+        case "$_dest" in
+            /etc/capsula-ota.conf|/usr/bin/capsula-ota|/etc/init.d/S98capsula-ota|/etc/init.d/S50avahi-daemon)
+                continue
+                ;;
+        esac
         _name=$(basename "$_dest")
-        [ -f "$_snap/$_name" ] || continue
-        cp -f "$_snap/$_name" "$_dest.new" 2>/dev/null || continue
-        chmod "${_mode:-755}" "$_dest.new" 2>/dev/null
-        mv -f "$_dest.new" "$_dest" 2>/dev/null || continue
+        if [ ! -f "$_snap/$_name" ]; then
+            log "Rollback source missing: $_name"
+            _rollback_ok=0
+            continue
+        fi
+        if ! atomic_replace_file "$_snap/$_name" "$_dest" "${_mode:-755}"; then
+            log "Rollback replace failed: $_dest"
+            _rollback_ok=0
+        fi
     done < "$_snap/files.list"
     sync
+    [ "$_rollback_ok" = "1" ] || return 1
     if [ -d "$_snap" ]; then
         printf '%s\n' "$(basename "$_snap")" > "$CURRENT_VERSION_FILE"
     fi
@@ -267,16 +386,64 @@ parse_manifest() {
     [ -s "$_clean" ] || die "no valid FILE entries"
 }
 
+ota_preflight() {
+    # No route (or hotspot/setup mode) means there is nothing to download.
+    # Return 0 so the daemon keeps its normal 10-minute interval instead of
+    # retrying every 60 seconds and wearing out flash with log writes.
+    _wifi_state=$(cat /tmp/wifi_setup.state 2>/dev/null || printf '')
+    if ! ip route show default 2>/dev/null | grep -q default || \
+       [ "$_wifi_state" = "NEED_SETUP" ] || [ "$_wifi_state" = "DISCONNECTED" ]; then
+        log "No internet route / Wi-Fi not connected: skipping OTA check."
+        set_result "skipped: no route"
+        return 1
+    fi
+
+    # A dead RTC makes TLS and version comparison unreliable. Try to fix the
+    # clock, but never download anything while the date is still wrong.
+    _year=$(date +%Y 2>/dev/null || printf '0')
+    case "$_year" in
+        ''|*[!0-9]*) _year=0 ;;
+    esac
+    if [ "$_year" -lt 2025 ]; then
+        log "RTC date $_year is invalid; trying NTP."
+        ntpd -q -n -p pool.ntp.org >/dev/null 2>&1 || \
+            ntpd -q -n -p time.google.com >/dev/null 2>&1
+        _year=$(date +%Y 2>/dev/null || printf '0')
+        case "$_year" in
+            ''|*[!0-9]*) _year=0 ;;
+        esac
+        if [ "$_year" -lt 2025 ]; then
+            log "Clock is still invalid ($_year); skipping OTA check."
+            set_result "skipped: clock"
+            return 1
+        fi
+        log "Clock synchronized: $_year."
+    fi
+    return 0
+}
+
 do_check() {
     force="$1"
     [ "$ENABLED" = "1" ] || { log "OTA disabled in configuration."; return 0; }
 
+    # Network and clock guards must not create a lock directory on every
+    # failed boot attempt; they run before the lock is acquired.
+    ota_preflight || return 0
+
     acquire_lock
+    # Secondary capsule waits so the primary can prove a release is good.
+    # Manual checks must not block a user in the terminal for 3 minutes.
+    if [ "$force" != "1" ] && [ ! -f /etc/alice-identity ]; then
+        log "Secondary capsule: canary delay 180s."
+        sleep 180
+    fi
     date '+%Y-%m-%d %H:%M:%S' > "$LAST_CHECK_FILE" 2>/dev/null
     log "Backup location: $BACKUP"
 
     MANIFEST_FILE="$WORK/manifest.txt"
-    download_to "$MANIFEST_URL" "$MANIFEST_FILE" || die "cannot download manifest from $MANIFEST_URL"
+    # Fastly caches raw.githubusercontent by full URL. A timestamp query
+    # forces a fresh manifest when a release has just been published.
+    download_to "$MANIFEST_URL?cb=$(date +%s)" "$MANIFEST_FILE" || die "cannot download manifest from $MANIFEST_URL"
     log "Manifest downloaded."
 
     parse_manifest
@@ -315,11 +482,19 @@ do_check() {
             fi
         fi
         staged="$WORK/$asset"
-        download_to "$url" "$staged" || die "download failed: $asset"
+        # The SHA from the manifest is a stable cache-buster: a new binary
+        # always gets a new URL even while raw.githubusercontent is stale.
+        download_to "$url?cb=$sha" "$staged" || die "download failed: $asset"
         actual_size=$(size_of "$staged")
         [ "$actual_size" = "$size" ] || die "size mismatch for $asset: $actual_size != $size"
         actual_sha=$(sha_of "$staged")
         [ "$actual_sha" = "$sha" ] || die "SHA-256 mismatch for $asset"
+        # The updater replaces itself. Never install a syntactically broken
+        # client: that would disable OTA and all future rollback paths.
+        if [ "$dest" = "/usr/bin/capsula-ota" ]; then
+            sh -n "$staged" || die "self-test failed: broken shell syntax"
+            sh "$staged" selftest || die "self-test failed: missing runtime prerequisites"
+        fi
         log "Verified $asset ($actual_size bytes)."
     done < "$WORK/files.list"
 
@@ -371,23 +546,40 @@ do_check() {
 
     if [ "$installed_ok" != "1" ]; then
         log "Installation failed; rolling back to $current_version."
-        restore_snapshot "$snapshot"
-        set_result "rollback to $current_version"
+        if restore_snapshot "$snapshot"; then
+            set_result "rollback to $current_version"
+        else
+            set_result "rollback failed; partial restore"
+        fi
+        # restore_snapshot kills the launcher and service binaries. Without
+        # this the capsule stays silent until a manual power cycle.
+        restart_services
         exit 1
     fi
 
     sync
-    printf '%s\n' "$new_version" > "$CURRENT_VERSION_FILE"
-    set_result "updated $new_version"
-    log "OTA update completed: $new_version"
-
     # The update may have replaced the config file. Apply its restart policy now,
     # not on the next 10-minute check.
     [ -f "$CONF" ] && . "$CONF"
     PENDING_RESTART="$OTA_HOME/restart_pending"
+
+    # Never mark an update installed before we know the new voice stack lives.
     if [ "$need_restart" = "1" ]; then
         restart_services
+        if ! health_check_services; then
+            log "Health check failed; rolling back to $current_version."
+            restore_snapshot "$snapshot"
+            restart_services
+            set_result "rollback: health check failed"
+            exit 1
+        fi
     fi
+
+    printf '%s\n' "$new_version" > "$CURRENT_VERSION_FILE"
+    sync
+    set_result "updated $new_version"
+    log "OTA update completed: $new_version"
+    prune_old_snapshots "$snapshot"
     return 0
 }
 

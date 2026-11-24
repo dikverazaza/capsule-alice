@@ -49,33 +49,6 @@ const WAKE_TRIGGER_FILE: &str = "/tmp/wakeword.trigger";
 static WHISPER_MODE: AtomicBool = AtomicBool::new(false);
 static BLUETOOTH_ACTIVE: AtomicBool = AtomicBool::new(false);
 
-// Явное обращение «Алиса» без команды. Раньше сюда всегда уходил фиксированный
-// запрос «Привет» в Vins, который почти всегда возвращал одну и ту же фразу.
-// Короткие ответы идут сразу в TTS: быстро и без зацикливания диалогового движка.
-const WAKE_REPLIES: &[&str] = &[
-    "Да?",
-    "Слушаю",
-    "Я тут",
-    "На связи",
-    "Привет!",
-    "Я здесь",
-    "Говори",
-    "Что случилось?",
-    "Да, я",
-    "Слушаю вас",
-];
-static LAST_WAKE_REPLY_IDX: AtomicUsize = AtomicUsize::new(usize::MAX);
-
-fn pick_wake_reply() -> &'static str {
-    let mut idx = (rand::thread_rng().next_u32() as usize) % WAKE_REPLIES.len();
-    let last = LAST_WAKE_REPLY_IDX.load(Ordering::Relaxed);
-    if idx == last {
-        idx = (idx + 1) % WAKE_REPLIES.len();
-    }
-    LAST_WAKE_REPLY_IDX.store(idx, Ordering::Relaxed);
-    WAKE_REPLIES[idx]
-}
-
 #[derive(Clone)]
 struct ActiveTimer {
     label: String,
@@ -106,6 +79,8 @@ static ALARM_RINGING_KIND: Mutex<String> = Mutex::new(String::new());
 static LAST_ALARM_CHIME: Mutex<Option<Instant>> = Mutex::new(None);
 static ALARM_START_TIME: Mutex<Option<Instant>> = Mutex::new(None);
 static ALICE_BUSY_FILE: &str = "/tmp/alice_busy";
+// Timer state is temporary: it survives a process restart (OTA), not a reboot.
+static TIMER_STATE_FILE: &str = "/tmp/alice_timers.json";
 static MIC_STATUS_FILE: &str = "/tmp/mic.status";
 static FIFO_MIC_CONTROL: &str = "/tmp/mic.control";
 static MIC_MUTED: AtomicBool = AtomicBool::new(false);
@@ -184,6 +159,107 @@ fn spawn_mic_control_listener() {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     });
+}
+
+fn epoch_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn write_timer_state(value: &Value) {
+    let tmp = "/tmp/alice_timers.json.tmp";
+    let Ok(text) = serde_json::to_string(value) else { return };
+    if fs::write(tmp, text).is_ok() {
+        let _ = fs::rename(tmp, TIMER_STATE_FILE);
+    }
+}
+
+fn persist_timer_state() {
+    let now = Instant::now();
+    let epoch = epoch_secs();
+    let timer = LOCAL_TIMER.lock().ok().and_then(|guard| {
+        guard.as_ref().map(|t| {
+            let remaining = t.deadline.saturating_duration_since(now).as_secs();
+            json!({
+                "label": t.label,
+                "total_secs": t.total_secs,
+                "deadline_epoch": epoch.saturating_add(remaining),
+                "announce": t.announce,
+            })
+        })
+    });
+    let alarm = LOCAL_ALARM.lock().ok().and_then(|guard| {
+        guard.as_ref().map(|a| {
+            let remaining = a.deadline.saturating_duration_since(now).as_secs();
+            json!({
+                "time_str": a.time_str,
+                "target_hour": a.target_hour,
+                "target_minute": a.target_minute,
+                "deadline_epoch": epoch.saturating_add(remaining),
+            })
+        })
+    });
+    write_timer_state(&json!({ "timer": timer, "alarm": alarm }));
+}
+
+fn restore_timer_state() {
+    let Ok(text) = fs::read_to_string(TIMER_STATE_FILE) else { return };
+    let Ok(value) = serde_json::from_str::<Value>(&text) else { return };
+    let now_epoch = epoch_secs();
+    let now = Instant::now();
+
+    if let Some(t) = value.get("timer").filter(|v| v.is_object()) {
+        if let (Some(label), Some(total_secs), Some(deadline_epoch)) = (
+            t.get("label").and_then(Value::as_str),
+            t.get("total_secs").and_then(Value::as_u64),
+            t.get("deadline_epoch").and_then(Value::as_u64),
+        ) {
+            let remaining = deadline_epoch.saturating_sub(now_epoch);
+            let deadline = if remaining == 0 {
+                // Fire once on the first loop iteration, then clear the file.
+                now
+            } else {
+                now + Duration::from_secs(remaining)
+            };
+            let announce = t.get("announce").and_then(Value::as_str).map(str::to_string);
+            if let Ok(mut guard) = LOCAL_TIMER.lock() {
+                *guard = Some(ActiveTimer {
+                    label: label.to_string(),
+                    total_secs,
+                    deadline,
+                    announce,
+                });
+            }
+            println!("[Timer] Восстановлен таймер «{label}»: {remaining} сек.");
+        }
+    }
+
+    if let Some(a) = value.get("alarm").filter(|v| v.is_object()) {
+        if let (Some(time_str), Some(target_hour), Some(target_minute), Some(deadline_epoch)) = (
+            a.get("time_str").and_then(Value::as_str),
+            a.get("target_hour").and_then(Value::as_u64),
+            a.get("target_minute").and_then(Value::as_u64),
+            a.get("deadline_epoch").and_then(Value::as_u64),
+        ) {
+            let remaining = deadline_epoch.saturating_sub(now_epoch);
+            let deadline = if remaining == 0 {
+                now
+            } else {
+                now + Duration::from_secs(remaining)
+            };
+            if let Ok(mut guard) = LOCAL_ALARM.lock() {
+                *guard = Some(ActiveAlarm {
+                    time_str: time_str.to_string(),
+                    target_hour: target_hour as u32,
+                    target_minute: target_minute as u32,
+                    deadline,
+                });
+            }
+            println!("[Alarm] Восстановлен будильник {time_str}: {remaining} сек.");
+        }
+    }
 }
 
 fn set_alice_busy(busy: bool) {
@@ -792,9 +868,16 @@ async fn play_named_radio(name: &str) -> bool {
         Ok(c) => c,
         Err(_) => return false,
     };
-    let response = match client
-        .get("https://de1.api.radio-browser.info/json/stations/search")
-        .query(&[
+    // A dead radio-browser node must not disable named radio. Fall back only
+    // on transport errors and 5xx: HTTP 200 with [] means "station not found",
+    // and the mirror will not have a better answer.
+    let endpoints = [
+        "https://de1.api.radio-browser.info/json/stations/search",
+        "https://all.api.radio-browser.info/json/stations/search",
+    ];
+    let mut response = None;
+    for url in endpoints {
+        let request = client.get(url).query(&[
             ("name", name),
             ("hidebroken", "true"),
             // Our decoder handles MP3 only. Radio Vanya's main stream is AAC+,
@@ -803,15 +886,27 @@ async fn play_named_radio(name: &str) -> bool {
             ("order", "clickcount"),
             ("reverse", "true"),
             ("limit", "10"),
-        ])
-        .send()
-        .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            println!("[Radio] Поиск станции «{name}» недоступен: {}", e.to_string());
-            return false;
+        ]);
+        match request.send().await {
+            Ok(r) if r.status().is_success() => {
+                response = Some(r);
+                break;
+            }
+            Ok(r) if r.status().is_server_error() => {
+                println!("[Radio] {url} вернул {}, пробуем резервный хост.", r.status());
+            }
+            Ok(r) => {
+                println!("[Radio] {url} вернул {}; поиск прерван.", r.status());
+                return false;
+            }
+            Err(e) => {
+                println!("[Radio] {url} недоступен: {}", e.to_string());
+            }
         }
+    }
+    let response = match response {
+        Some(r) => r,
+        None => return false,
     };
     let value: serde_json::Value = match response.json().await {
         Ok(v) => v,
@@ -2006,6 +2101,10 @@ fi
     let _ = std::fs::remove_file(WAKE_TRIGGER_FILE);
     let _ = File::create(WAKE_TRIGGER_FILE);
 
+    // Restore timers before the first loop iteration so an elapsed deadline
+    // fires once, then clears itself in the normal trigger path.
+    restore_timer_state();
+
     loop {
         // Read 100ms chunk from real-time channel
         let chunk_buf = match pcm_rx.recv().await {
@@ -2146,6 +2245,9 @@ fi
                 }
             }
             if fired {
+                // Clear persisted state at the same moment the in-memory
+                // timer is consumed, otherwise a restart would ring twice.
+                persist_timer_state();
                 if DND_MODE.load(Ordering::SeqCst) && kind == "alarm" {
                     println!("[Alarm] Будильник подавлен режимом «не беспокоить».");
                     continue;
@@ -2516,17 +2618,17 @@ fi
 
                     if cmd.is_empty() || (is_noise_word && !is_alice_wake(&raw_text)) {
                         if !is_noise_word && is_alice_wake(&raw_text) {
-                            let wake_reply = pick_wake_reply();
-                            println!("[Alice] Обращение «Алиса» без команды. Локальный ответ «{}», ждём продолжения...", wake_reply);
-                            speak_text(
-                                wake_reply,
+                            println!("[Alice] Обращение «Алиса» без команды. Отвечаем через Vins и ждём продолжения...");
+                            speak_dynamic_reply(
+                                "Привет",
+                                "Слушаю вас",
                                 &uniproxy,
+                                vins_ws,
                                 &mut speech_end_time,
                                 &mut state,
                             ).await;
-                            followup_deadline = Instant::now() + FOLLOWUP_WINDOW;
-                            followup_guard_until = Instant::now() + Duration::from_millis(700);
-                            state = "FOLLOWUP_LISTEN";
+                            // v24: не открываем follow-up во время TTS. Специфический
+                            // finished-блок сделает это после реального конца речи.
                             continue;
                         }
                         println!("[*] Отфильтрован шум / фоновый бубнёж: «{}» — возврат в ожидание.", raw_text);
@@ -2767,6 +2869,7 @@ async fn execute_command(
             deadline,
             announce: Some(what.clone()),
         });
+        persist_timer_state();
         println!("[Reminder] Напоминание через {secs} сек: «{what}»");
         speak_text(&format!("Напомню через {secs} секунд: {what}."), uniproxy, speech_end_time, state).await;
         return;
@@ -2787,6 +2890,7 @@ async fn execute_command(
                         None
                     },
                 });
+                persist_timer_state();
                 println!("[Timer] Установлен таймер на {label} ({secs} сек)");
                 speak_text(&format!("Установила таймер на {label}."), uniproxy, speech_end_time, state).await;
                 return;
@@ -2820,6 +2924,7 @@ async fn execute_command(
             }
             TimerAction::Cancel => {
                 *LOCAL_TIMER.lock().unwrap() = None;
+                persist_timer_state();
                 println!("[Timer] Таймер отменён.");
                 speak_text("Таймер отменён.", uniproxy, speech_end_time, state).await;
                 return;
@@ -2839,6 +2944,7 @@ async fn execute_command(
                     target_minute: m,
                     deadline,
                 });
+                persist_timer_state();
                 println!("[Alarm] Установлен будильник на {time_str} (через {diff} сек)");
                 speak_text(&format!("Будильник установлен на {time_str}."), uniproxy, speech_end_time, state).await;
                 return;
@@ -2871,6 +2977,7 @@ async fn execute_command(
             }
             AlarmAction::Cancel => {
                 *LOCAL_ALARM.lock().unwrap() = None;
+                persist_timer_state();
                 println!("[Alarm] Будильник отменён.");
                 speak_text("Будильник отменён.", uniproxy, speech_end_time, state).await;
                 return;
