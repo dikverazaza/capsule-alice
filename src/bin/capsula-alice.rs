@@ -1162,9 +1162,10 @@ impl UniproxySession {
                                     }
                                 }
                             }
-                            if is_alice_wake(&final_text) {
-                                break;
-                            }
+                            // v25: НЕ обрываем ASR на слове «Алиса». Раньше этот
+                            // ранний break возвращал только wake word, и фраза
+                            // «Алиса, включи мою волну» превращалась в пустую
+                            // команду с приветствием вместо действия.
                             if v.pointer("/directive/payload/endOfUtt").and_then(|e| e.as_bool()) == Some(true) {
                                 if !final_text.is_empty() {
                                     break;
@@ -2601,6 +2602,7 @@ fi
             match uniproxy.recognize_pcm_stream(&command_chunks, pre_ws).await {
                 Ok(raw_text) => {
                     println!("[Latency] ASR: {} ms", t_asr.elapsed().as_millis());
+                    println!("[ASR Raw]: «{}»", raw_text);
                     let cmd = clean_alice_prompt(&raw_text.to_lowercase());
                     let is_noise_word = cmd == "а" || cmd == "э" || cmd == "мм" || cmd == "угу" 
                         || cmd == "ну" || cmd == "а д" || cmd == "да" || cmd == "д" || cmd == "хм";
