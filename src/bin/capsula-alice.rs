@@ -772,15 +772,19 @@ fn send_music_cmd(cmd: &str) {
     }
 }
 
-/// Stop every audio source. Internet radio is a separate `capsula-audio |
-/// paplay` pipeline, so it needs an explicit kill. The Yandex player must get
-/// `stop`, not `pause`: if its audio processes were already replaced, `pause`
-/// fails, the player marks the track as an error and advances to the next one.
+/// Pause Yandex music without touching its audio processes. Killing them first
+/// made `pause` fail, and the player treated that as an error and skipped to
+/// the next track. Voice "стоп" must pause, not skip.
+fn pause_music() {
+    send_music_cmd("pause");
+}
+
+/// Stop internet radio (`capsula-audio | paplay` pipeline).
 fn stop_radio() {
-    send_music_cmd("stop");
     let _ = Command::new("killall")
         .args(["-9", "capsula-audio", "paplay"])
         .status();
+    send_music_cmd("pause");
 }
 
 fn normalize_radio_name(s: &str) -> String {
@@ -3082,7 +3086,7 @@ async fn execute_command(
     if is_stop_command(&cmd) {
         println!("[Audio] Команда остановки речи и звука.");
         stop_speech();
-        stop_radio();
+        pause_music();
         unduck_music();
         set_ring("off");
         set_alice_busy(false);
@@ -3099,7 +3103,7 @@ async fn execute_command(
         || cmd.contains("заглуши") || cmd.contains("выруби") {
         println!("[Music] Остановка музыки.");
         stop_speech();
-        stop_radio();
+        pause_music();
         unduck_music();
         set_ring("off");
         set_alice_busy(false);
